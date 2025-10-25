@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import "./globals.css";
 
 type SeedType = "Berry" | "Fungi" | "Rose";
-type ToolType = "Spade";
+type ToolType = "Spade" | "WateringCan" | "Fertilizer";
 
 interface SeedPacket {
   id: string;
@@ -16,6 +16,7 @@ interface Tool {
   id: string;
   type: ToolType;
   image: string;
+  price?: number; // Optional price (spade is free, others cost money)
 }
 
 interface PlacedSprout {
@@ -60,11 +61,25 @@ function App() {
     },
   ];
 
-  const spade: Tool = {
-    id: "spade",
-    type: "Spade",
-    image: "/Sprites/UI/Spade.png",
-  };
+  const tools: Tool[] = [
+    {
+      id: "spade",
+      type: "Spade",
+      image: "/Sprites/UI/Spade.png",
+    },
+    {
+      id: "wateringcan",
+      type: "WateringCan",
+      image: "/Sprites/UI/wateringcan.png",
+      price: 25,
+    },
+    {
+      id: "fertilizer",
+      type: "Fertilizer",
+      image: "/Sprites/UI/fertilizer.png",
+      price: 30,
+    },
+  ];
 
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -269,11 +284,11 @@ function App() {
         );
       })()}
 
-      {/* Shovel drag preview */}
+      {/* Tool drag preview */}
       {draggedTool && (
         <img
-          src={spade.image}
-          alt="shovel preview"
+          src={draggedTool.image}
+          alt="tool preview"
           className="image-pixelated pointer-events-none absolute h-12 w-auto object-contain"
           style={{
             left: dragPosition.x - 24,
@@ -317,33 +332,42 @@ function App() {
           </div>
         </div>
         <div className="p-8 flex flex-row justify-between items-center">
-          <div className="relative w-fit h-fit">
-            <img
-              src="/Sprites/UI/SpadeUI.png"
-              className="image-pixelated w-[100px] h-auto"
-              alt="packet ui"
-            />
-            <div
-              draggable={!attachedSproutId}
-              onDragStart={handleToolDragStart(spade)}
-              onDragEnd={handleToolDragEnd}
-              className={`absolute inset-0 flex justify-center items-center transition-all ${
-                attachedSproutId
-                  ? "opacity-30 cursor-not-allowed"
-                  : draggedTool?.id === spade.id
-                  ? "opacity-50 cursor-grab active:cursor-grabbing"
-                  : "opacity-100 cursor-grab active:cursor-grabbing hover:scale-110"
-              }`}
-              style={{
-                pointerEvents: attachedSproutId ? "none" : "auto",
-              }}
-            >
-              <img
-                src={spade.image}
-                className="h-12 w-auto image-pixelated object-contain pointer-events-none"
-                alt="Spade tool"
-              />
-            </div>
+          <div className="flex flex-row gap-4">
+            {tools.map((tool) => (
+              <div key={tool.id} className="relative w-fit h-fit flex flex-col items-center gap-1">
+                <div className="relative w-fit h-fit">
+                  <img
+                    src="/Sprites/UI/SpadeUI.png"
+                    className="image-pixelated w-[100px] h-auto"
+                    alt="tool ui background"
+                  />
+                  <div
+                    draggable={!attachedSproutId}
+                    onDragStart={handleToolDragStart(tool)}
+                    onDragEnd={handleToolDragEnd}
+                    className={`absolute inset-0 flex justify-center items-center transition-all ${
+                      attachedSproutId
+                        ? "opacity-30 cursor-not-allowed"
+                        : draggedTool?.id === tool.id
+                        ? "opacity-50 cursor-grab active:cursor-grabbing"
+                        : "opacity-100 cursor-grab active:cursor-grabbing hover:scale-110"
+                    }`}
+                    style={{
+                      pointerEvents: attachedSproutId ? "none" : "auto",
+                    }}
+                  >
+                    <img
+                      src={tool.image}
+                      className="h-12 w-auto image-pixelated object-contain pointer-events-none"
+                      alt={`${tool.type} tool`}
+                    />
+                  </div>
+                </div>
+                {tool.price && (
+                  <div className="text-xs text-white font-bold">${tool.price}</div>
+                )}
+              </div>
+            ))}
           </div>
           <div className="text-5xl text-white font-bold">5:00</div>
         </div>
