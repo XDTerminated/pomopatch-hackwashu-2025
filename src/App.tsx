@@ -1044,7 +1044,7 @@ function App() {
                         </div>
                       </div>
                     )}
-                    <div className={`text-xs pointer-events-none ${!canAfford ? "text-red-600" : ""}`}>
+                    <div className={`text-xs pointer-events-none font-bold ${!canAfford ? "text-red-600" : ""}`} style={{ color: !canAfford ? "" : "#9e4539" }}>
                       ${seed.price}
                     </div>
                   </li>
@@ -1052,6 +1052,77 @@ function App() {
               })}
             </ol>
           </div>
+
+          {/* Watering Can and Fertilizer Tools */}
+          <div className="relative w-fit h-fit">
+            <img
+              src="/Sprites/UI/PacketUI.png"
+              className="image-pixelated w-[300px] h-auto"
+              alt="tool packet ui"
+              draggable={false}
+            />
+            <ol className="absolute inset-0 flex flex-row justify-between items-center gap-3 px-10">
+              {tools.filter(tool => tool.type === "WateringCan" || tool.type === "Fertilizer").map((tool) => {
+                return (
+                  <li
+                    key={tool.id}
+                    onMouseDown={
+                      !attachedSproutId
+                        ? handleToolMouseDown(tool)
+                        : undefined
+                    }
+                    onMouseEnter={() => {
+                      if (!attachedSproutId) {
+                        playSound("/Audio/interact.mp3");
+                        setHoveredToolId(tool.id);
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      setHoveredToolId(null);
+                    }}
+                    className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all relative ${
+                      draggedTool?.id === tool.id
+                        ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95"
+                        : attachedSproutId
+                        ? "opacity-30 cursor-not-allowed"
+                        : "opacity-100 cursor-grab active:cursor-grabbing active:scale-95 wiggle-hover"
+                    }`}
+                    style={{
+                      pointerEvents: attachedSproutId ? "none" : "auto",
+                    }}
+                  >
+                    <img
+                      src={tool.image}
+                      className="w-fit h-full image-pixelated object-contain pointer-events-none"
+                      alt={`${tool.type} tool`}
+                      draggable={false}
+                    />
+                    <div className="text-xs pointer-events-none font-bold" style={{ color: "#9e4539" }}>
+                      ${tool.price}
+                    </div>
+
+                    {/* Tool tooltip */}
+                    {hoveredToolId === tool.id && !attachedSproutId && (
+                      <div
+                        className="absolute top-full mt-2 text-xs px-3 py-2 whitespace-nowrap z-50 font-bold"
+                        style={{
+                          backgroundColor: "#D4A574",
+                          border: "3px solid #8B4513",
+                          color: "#3D2817",
+                          boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                          imageRendering: "pixelated",
+                        }}
+                      >
+                        {tool.type === "WateringCan" && "Turn seedlings into sprouts"}
+                        {tool.type === "Fertilizer" && "Turn sprouts into plants"}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+
           {/* Weather Icon Display */}
           <div
             className="flex flex-col items-center gap-1 relative"
@@ -1089,7 +1160,7 @@ function App() {
         </div>
         <div className="p-8 flex flex-row justify-between items-center">
           <div className="flex flex-row gap-4">
-            {tools.map((tool) => {
+            {tools.filter(tool => tool.type === "Spade").map((tool) => {
               // Show dollar sign for spade when sprout is attached
               const showDollarSign = tool.type === "Spade" && attachedSproutId;
               const displayImage = showDollarSign
