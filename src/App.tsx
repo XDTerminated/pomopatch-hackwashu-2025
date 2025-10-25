@@ -114,6 +114,7 @@ function App() {
   const [customCursorPosition, setCustomCursorPosition] = useState({ x: 0, y: 0 });
   const [isHoveringWeather, setIsHoveringWeather] = useState(false);
   const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
+  const [displayedMoney, setDisplayedMoney] = useState(100);
 
   // Function to play sounds
   const playSound = (soundPath: string) => {
@@ -183,6 +184,30 @@ function App() {
 
     return () => clearTimeout(timeout);
   }, []);
+
+  // Animate money counter when money changes
+  useEffect(() => {
+    const difference = money - displayedMoney;
+    if (difference === 0) return;
+
+    const duration = 500; // Animation duration in ms
+    const steps = 20; // Number of steps in animation
+    const stepValue = difference / steps;
+    const stepDuration = duration / steps;
+
+    let currentStep = 0;
+    const interval = setInterval(() => {
+      currentStep++;
+      if (currentStep >= steps) {
+        setDisplayedMoney(money);
+        clearInterval(interval);
+      } else {
+        setDisplayedMoney((prev) => prev + stepValue);
+      }
+    }, stepDuration);
+
+    return () => clearInterval(interval);
+  }, [money, displayedMoney]);
 
   const seedPackets: SeedPacket[] = [
     {
@@ -862,7 +887,7 @@ function App() {
         );
       })}
 
-      <div className="h-full w-full flex flex-col justify-between">
+      <div className="h-full w-full flex flex-col justify-between relative z-10">
         <div className="flex flex-row justify-between h-fit w-full p-8">
           <div className="flex flex-row gap-4 items-center">
             <div className="relative w-fit h-fit">
@@ -1059,7 +1084,7 @@ function App() {
           </div>
         </div>
           <div className="flex justify-center">
-            <div className="text-5xl text-white font-bold">${money}</div>
+            <div className="text-5xl text-white font-bold">${Math.round(displayedMoney)}</div>
           </div>
         </div>
         <div className="p-8 flex flex-row justify-between items-center">

@@ -115,3 +115,31 @@ body {
     opacity: 1;
   }
 }
+
+@keyframes sunRayFall {
+  0% {
+    top: 100%;
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    top: -100%;
+    opacity: 0.3;
+  }
+}
+
+@keyframes cloudShadowDrift {
+  0% {
+    left: 120%;
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.4;
+  }
+  100% {
+    left: -20%;
+    opacity: 0.2;
+  }
+}
