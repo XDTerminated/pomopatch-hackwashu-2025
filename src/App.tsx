@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import "./globals.css";
 
 type SeedType = "Berry" | "Fungi" | "Rose";
-type ToolType = "Spade" | "WateringCan" | "Fertilizer";
+type ToolType = "Spade" | "WateringCan" | "Fertilizer" | "Backpack";
 type WeatherType = "sunny" | "rainy" | "cloudy";
 
 interface SeedPacket {
@@ -46,6 +46,11 @@ interface RainDrop {
   id: string;
   x: number;
   delay: number;
+}
+
+interface Lightning {
+  id: string;
+  opacity: number;
 }
 
 interface ToolParticle {
@@ -115,6 +120,9 @@ function App() {
   const [isHoveringWeather, setIsHoveringWeather] = useState(false);
   const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
   const [displayedMoney, setDisplayedMoney] = useState(100);
+  const [inventoryLimit, setInventoryLimit] = useState(25);
+  const [isHoveringPlantCount, setIsHoveringPlantCount] = useState(false);
+  const [lightning, setLightning] = useState<Lightning | null>(null);
 
   // Function to play sounds
   const playSound = (soundPath: string) => {
@@ -185,6 +193,28 @@ function App() {
     return () => clearTimeout(timeout);
   }, []);
 
+  // Trigger lightning randomly when it's raining
+  useEffect(() => {
+    if (weather === "rainy") {
+      const triggerLightning = () => {
+        const lightningId = `lightning-${Date.now()}`;
+        setLightning({ id: lightningId, opacity: 1 });
+
+        // Fade out lightning after a brief moment
+        setTimeout(() => {
+          setLightning(null);
+        }, 200);
+
+        // Schedule next lightning strike (random interval between 3-8 seconds)
+        const nextStrike = Math.random() * 5000 + 3000;
+        return setTimeout(triggerLightning, nextStrike);
+      };
+
+      const timeout = triggerLightning();
+      return () => clearTimeout(timeout);
+    }
+  }, [weather]);
+
   // Animate money counter when money changes
   useEffect(() => {
     const difference = money - displayedMoney;
@@ -247,6 +277,12 @@ function App() {
       type: "Fertilizer",
       image: "/Sprites/UI/fertilizer.png",
       price: 30,
+    },
+    {
+      id: "backpack",
+      type: "Backpack",
+      image: "/Sprites/UI/backpack.png",
+      price: 50,
     },
   ];
 
@@ -390,8 +426,9 @@ function App() {
       if (draggedSeed && money >= draggedSeed.price) {
         const hasCollision = checkCollision(cursorPosition.x, cursorPosition.y);
         const inUIArea = isInUIArea(cursorPosition.x, cursorPosition.y);
+        const inventoryFull = placedSprouts.length >= inventoryLimit;
 
-        if (!hasCollision && !inUIArea) {
+        if (!hasCollision && !inUIArea && !inventoryFull) {
           const newSproutId = `sprout-${Date.now()}`;
           setPlacedSprouts([
             ...placedSprouts,
@@ -694,6 +731,18 @@ function App() {
       {/* Weather effects - Rain */}
       {weather === "rainy" && <Rain rainDrops={rainDrops} />}
 
+      {/* Lightning flash */}
+      {lightning && (
+        <div
+          className="pointer-events-none fixed inset-0 bg-white"
+          style={{
+            opacity: lightning.opacity,
+            zIndex: 10002,
+            animation: "lightningFlash 0.2s ease-out",
+          }}
+        />
+      )}
+
       <main
         className="h-screen w-full flex justify-center relative"
         style={{
@@ -769,6 +818,7 @@ function App() {
           const hasCollision = checkCollision(dragPosition.x, dragPosition.y);
           const inUIArea = isInUIArea(dragPosition.x, dragPosition.y);
           const canAfford = money >= draggedSeed.price;
+          const inventoryFull = placedSprouts.length >= inventoryLimit;
 
           return (
             <div
@@ -777,7 +827,7 @@ function App() {
                 left: dragPosition.x - 48,
                 top: dragPosition.y - 48,
                 filter:
-                  hasCollision || !canAfford || inUIArea
+                  hasCollision || !canAfford || inUIArea || inventoryFull
                     ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)"
                     : "brightness(1.2) saturate(1.5) contrast(1.1)",
                 zIndex: 9999,
@@ -1044,7 +1094,7 @@ function App() {
                         </div>
                       </div>
                     )}
-                    <div className={`text-xs pointer-events-none font-bold ${!canAfford ? "text-red-600" : ""}`} style={{ color: !canAfford ? "" : "#9e4539" }}>
+                    <div className={`text-sm pointer-events-none font-bold ${!canAfford ? "text-red-600" : ""}`} style={{ color: !canAfford ? "" : "#9e4539" }}>
                       ${seed.price}
                     </div>
                   </li>
@@ -1053,7 +1103,7 @@ function App() {
             </ol>
           </div>
 
-          {/* Watering Can and Fertilizer Tools */}
+          {/* Watering Can, Fertilizer, and Backpack Tools */}
           <div className="relative w-fit h-fit">
             <img
               src="/Sprites/UI/PacketUI.png"
@@ -1062,15 +1112,24 @@ function App() {
               draggable={false}
             />
             <ol className="absolute inset-0 flex flex-row justify-between items-center gap-3 px-10">
-              {tools.filter(tool => tool.type === "WateringCan" || tool.type === "Fertilizer").map((tool) => {
+              {tools.filter(tool => tool.type === "WateringCan" || tool.type === "Fertilizer" || tool.type === "Backpack").map((tool) => {
                 return (
                   <li
                     key={tool.id}
                     onMouseDown={
-                      !attachedSproutId
+                      !attachedSproutId && tool.type !== "Backpack"
                         ? handleToolMouseDown(tool)
                         : undefined
                     }
+                    onClick={() => {
+                      if (tool.type === "Backpack" && money >= (tool.price || 0)) {
+                        setMoney(money - (tool.price || 0));
+                        setInventoryLimit(inventoryLimit + 5);
+                        playSound("/Audio/interact.mp3");
+                      } else if (tool.type === "Backpack") {
+                        playSound("/Audio/error.mp3");
+                      }
+                    }}
                     onMouseEnter={() => {
                       if (!attachedSproutId) {
                         playSound("/Audio/interact.mp3");
@@ -1081,40 +1140,50 @@ function App() {
                       setHoveredToolId(null);
                     }}
                     className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all relative ${
-                      draggedTool?.id === tool.id
+                      tool.type === "Backpack"
+                        ? money >= (tool.price || 0)
+                          ? "opacity-100 cursor-pointer active:scale-95 wiggle-hover"
+                          : "opacity-30 cursor-not-allowed"
+                        : draggedTool?.id === tool.id
                         ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95"
                         : attachedSproutId
                         ? "opacity-30 cursor-not-allowed"
                         : "opacity-100 cursor-grab active:cursor-grabbing active:scale-95 wiggle-hover"
                     }`}
                     style={{
-                      pointerEvents: attachedSproutId ? "none" : "auto",
+                      pointerEvents: tool.type === "Backpack" ? "auto" : attachedSproutId ? "none" : "auto",
+                      filter: tool.type === "Backpack" && money < (tool.price || 0) ? "grayscale(100%)" : "none",
                     }}
                   >
-                    <img
-                      src={tool.image}
-                      className="w-fit h-full image-pixelated object-contain pointer-events-none"
-                      alt={`${tool.type} tool`}
-                      draggable={false}
-                    />
-                    <div className="text-xs pointer-events-none font-bold" style={{ color: "#9e4539" }}>
+                    <div className="h-full flex items-center justify-center">
+                      <img
+                        src={tool.image}
+                        className={`image-pixelated object-contain pointer-events-none ${
+                          tool.type === "Backpack" ? "w-10 h-10" : "w-fit h-full"
+                        }`}
+                        alt={`${tool.type} tool`}
+                        draggable={false}
+                      />
+                    </div>
+                    <div className="text-sm pointer-events-none font-bold" style={{ color: "#9e4539" }}>
                       ${tool.price}
                     </div>
 
                     {/* Tool tooltip */}
-                    {hoveredToolId === tool.id && !attachedSproutId && (
+                    {hoveredToolId === tool.id && (tool.type !== "Backpack" ? !attachedSproutId : true) && (
                       <div
-                        className="absolute top-full mt-2 text-xs px-3 py-2 whitespace-nowrap z-50 font-bold"
+                        className="absolute top-full mt-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold"
                         style={{
                           backgroundColor: "#D4A574",
                           border: "3px solid #8B4513",
-                          color: "#3D2817",
+                          color: "#9e4539",
                           boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
                           imageRendering: "pixelated",
                         }}
                       >
                         {tool.type === "WateringCan" && "Turn seedlings into sprouts"}
                         {tool.type === "Fertilizer" && "Turn sprouts into plants"}
+                        {tool.type === "Backpack" && `Upgrade inventory (+5 slots)`}
                       </div>
                     )}
                   </li>
@@ -1140,11 +1209,11 @@ function App() {
             {/* Weather effect description on hover */}
             {isHoveringWeather && (
               <div
-                className="absolute top-full mt-2 text-xs px-3 py-2 whitespace-nowrap z-50 font-bold"
+                className="absolute top-full mt-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold"
                 style={{
                   backgroundColor: "#D4A574",
                   border: "3px solid #8B4513",
-                  color: "#3D2817",
+                  color: "#9e4539",
                   boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
                   imageRendering: "pixelated",
                 }}
@@ -1154,12 +1223,12 @@ function App() {
             )}
           </div>
         </div>
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-2">
             <div className="text-5xl text-white font-bold">${Math.round(displayedMoney)}</div>
           </div>
         </div>
         <div className="p-8 flex flex-row justify-between items-center">
-          <div className="flex flex-row gap-4">
+          <div className="flex flex-row gap-4 items-center">
             {tools.filter(tool => tool.type === "Spade").map((tool) => {
               // Show dollar sign for spade when sprout is attached
               const showDollarSign = tool.type === "Spade" && attachedSproutId;
@@ -1230,11 +1299,11 @@ function App() {
                   {/* Tool tooltip */}
                   {hoveredToolId === tool.id && !showDollarSign && !attachedSproutId && (
                     <div
-                      className="absolute bottom-full mb-2 text-xs px-3 py-2 whitespace-nowrap z-50 font-bold"
+                      className="absolute bottom-full mb-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold"
                       style={{
                         backgroundColor: "#D4A574",
                         border: "3px solid #8B4513",
-                        color: "#3D2817",
+                        color: "#9e4539",
                         boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
                         imageRendering: "pixelated",
                       }}
@@ -1247,6 +1316,29 @@ function App() {
                 </div>
               );
             })}
+            <div
+              className="text-xl text-white font-bold relative"
+              onMouseEnter={() => setIsHoveringPlantCount(true)}
+              onMouseLeave={() => setIsHoveringPlantCount(false)}
+            >
+              {placedSprouts.length}/{inventoryLimit}
+
+              {/* Plant count tooltip */}
+              {isHoveringPlantCount && (
+                <div
+                  className="absolute bottom-full mb-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold"
+                  style={{
+                    backgroundColor: "#D4A574",
+                    border: "3px solid #8B4513",
+                    color: "#9e4539",
+                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                    imageRendering: "pixelated",
+                  }}
+                >
+                  Plants in inventory
+                </div>
+              )}
+            </div>
           </div>
           <div className="text-5xl text-white font-bold">5:00</div>
         </div>
