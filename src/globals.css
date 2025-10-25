@@ -1,1 +1,11 @@
 @import "tailwindcss";
+
+body {
+  font-family: "Jersey 10", sans-serif;
+}
+
+@layer utilities {
+  .image-pixelated {
+    image-rendering: pixelated;
+  }
+}
