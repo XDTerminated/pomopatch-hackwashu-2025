@@ -46,11 +46,18 @@ interface RainDrop {
   id: string;
   x: number;
   delay: number;
+  duration: number;
 }
 
 interface Lightning {
   id: string;
   opacity: number;
+}
+
+interface RainSplash {
+  id: string;
+  x: number;
+  y: number;
 }
 
 interface ToolParticle {
@@ -76,7 +83,7 @@ const Rain = memo(({ rainDrops }: { rainDrops: RainDrop[] }) => {
             width: "2px",
             height: "20px",
             background: "linear-gradient(to bottom, rgba(174, 194, 224, 0.8), rgba(174, 194, 224, 0))",
-            animation: `rainFall ${1.5 + Math.random() * 0.5}s linear infinite`,
+            animation: `rainFall ${drop.duration}s linear infinite`,
             animationDelay: `${drop.delay}s`,
             zIndex: 10001,
           }}
@@ -110,10 +117,7 @@ function App() {
   const [lastCursorPosition, setLastCursorPosition] = useState({ x: 0, y: 0 });
   const [wobbleAudio, setWobbleAudio] = useState<HTMLAudioElement | null>(null);
   const [rainDrops, setRainDrops] = useState<RainDrop[]>([]);
-  const [weather, setWeather] = useState<WeatherType>(() => {
-    const weatherTypes: WeatherType[] = ["sunny", "rainy", "cloudy"];
-    return weatherTypes[Math.floor(Math.random() * weatherTypes.length)];
-  });
+  const [weather, setWeather] = useState<WeatherType>("rainy"); // Start with rainy for testing
   const [toolParticles, setToolParticles] = useState<ToolParticle[]>([]);
   const [hoveredPacketId, setHoveredPacketId] = useState<string | null>(null);
   const [customCursorPosition, setCustomCursorPosition] = useState({ x: 0, y: 0 });
@@ -123,6 +127,7 @@ function App() {
   const [inventoryLimit, setInventoryLimit] = useState(25);
   const [isHoveringPlantCount, setIsHoveringPlantCount] = useState(false);
   const [lightning, setLightning] = useState<Lightning | null>(null);
+  const [rainSplashes, setRainSplashes] = useState<RainSplash[]>([]);
 
   // Function to play sounds
   const playSound = (soundPath: string) => {
@@ -133,6 +138,20 @@ function App() {
       .catch((error) =>
         console.error("Audio play failed:", error, "Path:", soundPath)
       );
+  };
+
+  // Function to create rain splash particles
+  const createRainSplash = (xPercent: number) => {
+    const x = (window.innerWidth * xPercent) / 100;
+    const y = window.innerHeight;
+    const splashId = `splash-${Date.now()}-${Math.random()}`;
+
+    setRainSplashes((prev) => [...prev, { id: splashId, x, y }]);
+
+    // Remove splash after animation
+    setTimeout(() => {
+      setRainSplashes((prev) => prev.filter((s) => s.id !== splashId));
+    }, 300);
   };
 
   // Handle wobble sound when sprout is attached
@@ -156,16 +175,93 @@ function App() {
     }
   }, [attachedSproutId]);
 
+  // Handle rain audio with fade in/out
+  useEffect(() => {
+    if (weather === "rainy") {
+      console.log("Starting rain audio...");
+      const audio = new Audio("/Audio/rain.mp3");
+      audio.loop = true;
+      audio.volume = 0;
+
+      // Try to play immediately
+      const playPromise = audio.play();
+
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log("Rain audio started successfully");
+            // Fade in
+            let fadeInInterval = setInterval(() => {
+              if (audio.volume < 0.05) {
+                audio.volume = Math.min(audio.volume + 0.005, 0.05);
+              } else {
+                clearInterval(fadeInInterval);
+              }
+            }, 100);
+          })
+          .catch((error) => {
+            console.error("Rain audio play failed:", error);
+            console.log("This might be due to browser autoplay policy. Click anywhere on the page to enable audio.");
+
+            // Try to play on first user interaction
+            const enableAudio = () => {
+              audio.play()
+                .then(() => {
+                  console.log("Rain audio started after user interaction");
+                  // Fade in
+                  let fadeInInterval = setInterval(() => {
+                    if (audio.volume < 0.05) {
+                      audio.volume = Math.min(audio.volume + 0.005, 0.05);
+                    } else {
+                      clearInterval(fadeInInterval);
+                    }
+                  }, 100);
+                  document.removeEventListener('click', enableAudio);
+                })
+                .catch(e => console.error("Still failed:", e));
+            };
+            document.addEventListener('click', enableAudio, { once: true });
+          });
+      }
+
+      // Cleanup when weather changes or component unmounts
+      return () => {
+        console.log("Stopping rain audio...");
+        // Fade out gradually
+        const fadeOutInterval = setInterval(() => {
+          if (audio.volume > 0.01) {
+            audio.volume = Math.max(audio.volume - 0.01, 0);
+          } else {
+            audio.pause();
+            audio.currentTime = 0;
+            clearInterval(fadeOutInterval);
+          }
+        }, 50);
+      };
+    }
+  }, [weather]);
+
   // Generate rain drops when weather changes
   useEffect(() => {
     if (weather === "rainy") {
       const drops: RainDrop[] = [];
       for (let i = 0; i < 50; i++) {
+        const duration = 1.5 + Math.random() * 0.5;
+        const delay = Math.random() * 2 - 2;
         drops.push({
           id: `rain-${i}`,
           x: Math.random() * 100, // percentage
-          delay: Math.random() * 2 - 2, // Negative delay to start mid-animation
+          delay: delay,
+          duration: duration,
         });
+
+        // Schedule splash particle when raindrop hits ground
+        const splashTime = (delay + duration) * 1000;
+        setTimeout(() => {
+          if (weather === "rainy") {
+            createRainSplash(drops[i].x);
+          }
+        }, splashTime > 0 ? splashTime : 0);
       }
       setRainDrops(drops);
     } else {
@@ -196,22 +292,34 @@ function App() {
   // Trigger lightning randomly when it's raining
   useEffect(() => {
     if (weather === "rainy") {
+      let timeoutId: ReturnType<typeof setTimeout>;
+
       const triggerLightning = () => {
         const lightningId = `lightning-${Date.now()}`;
         setLightning({ id: lightningId, opacity: 1 });
+
+        // Play thunder sound
+        playSound("/Audio/thunder.mp3");
 
         // Fade out lightning after a brief moment
         setTimeout(() => {
           setLightning(null);
         }, 200);
 
-        // Schedule next lightning strike (random interval between 3-8 seconds)
-        const nextStrike = Math.random() * 5000 + 3000;
-        return setTimeout(triggerLightning, nextStrike);
+        // Schedule next lightning strike (random interval between 8-15 seconds)
+        const nextStrike = Math.random() * 7000 + 8000;
+        timeoutId = setTimeout(triggerLightning, nextStrike);
       };
 
-      const timeout = triggerLightning();
-      return () => clearTimeout(timeout);
+      timeoutId = setTimeout(triggerLightning, Math.random() * 7000 + 8000);
+
+      return () => {
+        clearTimeout(timeoutId);
+        setLightning(null); // Clear any active lightning
+      };
+    } else {
+      // Make sure lightning is cleared when not raining
+      setLightning(null);
     }
   }, [weather]);
 
@@ -908,6 +1016,41 @@ function App() {
           />
         );
       })}
+
+      {/* Rain splash particles */}
+      {rainSplashes.map((splash) => (
+        <div
+          key={splash.id}
+          className="pointer-events-none absolute"
+          style={{
+            left: splash.x,
+            top: splash.y - 10,
+            width: "8px",
+            height: "8px",
+            zIndex: 10001,
+          }}
+        >
+          {/* Create 3-4 small droplets spreading outward */}
+          {[0, 1, 2].map((i) => {
+            const angle = (Math.PI / 3) * i - Math.PI / 6;
+            const speed = 15 + Math.random() * 10;
+            return (
+              <div
+                key={i}
+                className="absolute rounded-full"
+                style={{
+                  width: "3px",
+                  height: "3px",
+                  backgroundColor: "rgba(174, 194, 224, 0.8)",
+                  animation: "rainSplash 0.3s ease-out forwards",
+                  "--splash-x": `${Math.cos(angle) * speed}px`,
+                  "--splash-y": `${Math.sin(angle) * speed}px`,
+                } as React.CSSProperties}
+              />
+            );
+          })}
+        </div>
+      ))}
 
       {/* Coin particles */}
       {coinParticles.map((coin) => {

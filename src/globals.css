@@ -155,3 +155,14 @@ body {
     opacity: 0;
   }
 }
+
+@keyframes rainSplash {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translate(var(--splash-x), var(--splash-y)) scale(0);
+    opacity: 0;
+  }
+}
