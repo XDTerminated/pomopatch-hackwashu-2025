@@ -26,6 +26,14 @@ interface PlacedSprout {
   seedType: SeedType;
 }
 
+interface CoinParticle {
+  id: string;
+  x: number;
+  y: number;
+  startX: number;
+  startY: number;
+}
+
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
@@ -40,6 +48,7 @@ function App() {
   const [attachedSproutId, setAttachedSproutId] = useState<string | null>(null);
   const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
   const [isHoveringDollarSign, setIsHoveringDollarSign] = useState(false);
+  const [coinParticles, setCoinParticles] = useState<CoinParticle[]>([]);
 
   // Function to play sounds
   const playSound = (soundPath: string) => {
@@ -218,6 +227,24 @@ function App() {
           const seedPrice = seedPackets.find(p => p.type === sproutToSell.seedType)?.price || 0;
           const refund = Math.floor(seedPrice / 2);
 
+          // Create coin particles at cursor position
+          const newCoins: CoinParticle[] = [];
+          for (let i = 0; i < 5; i++) {
+            newCoins.push({
+              id: `coin-${Date.now()}-${i}`,
+              x: cursorPosition.x,
+              y: cursorPosition.y,
+              startX: cursorPosition.x,
+              startY: cursorPosition.y,
+            });
+          }
+          setCoinParticles([...coinParticles, ...newCoins]);
+
+          // Remove coins after animation
+          setTimeout(() => {
+            setCoinParticles((prev) => prev.filter((c) => !newCoins.find((nc) => nc.id === c.id)));
+          }, 1000);
+
           setMoney(money + refund);
           setPlacedSprouts(placedSprouts.filter(s => s.id !== attachedSproutId));
           setAttachedSproutId(null);
@@ -326,6 +353,32 @@ function App() {
           }}
         />
       )}
+
+      {/* Coin particles */}
+      {coinParticles.map((coin) => {
+        // Calculate target position (money display is in top right)
+        const targetX = window.innerWidth - 150;
+        const targetY = 80;
+
+        return (
+          <img
+            key={coin.id}
+            src="/Sprites/coin.png"
+            alt="coin"
+            className="image-pixelated pointer-events-none absolute w-8 h-8 object-contain animate-coin-fly"
+            style={{
+              left: coin.startX,
+              top: coin.startY,
+              zIndex: 10000,
+              animation: `coinFly 1s ease-out forwards`,
+              animationDelay: `${Math.random() * 0.1}s`,
+              '--target-x': `${targetX - coin.startX}px`,
+              '--target-y': `${targetY - coin.startY}px`,
+            } as React.CSSProperties}
+          />
+        );
+      })}
+
       <div className="h-full w-full flex flex-col justify-between">
         <div className="flex flex-row justify-between h-fit w-full p-8">
           <div className="relative w-fit h-fit">
