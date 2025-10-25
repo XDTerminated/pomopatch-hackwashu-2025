@@ -326,7 +326,13 @@ function App() {
 
   return (
     <main
-      className="h-screen w-full bg-[#547E64] flex justify-center relative"
+      className="h-screen w-full flex justify-center relative"
+      style={{
+        backgroundImage: "url('/Sprites/UI/background.png')",
+        backgroundRepeat: "repeat",
+        backgroundSize: "100px 100px",
+        imageRendering: "pixelated",
+      }}
       onDragOver={handleBackgroundDragOver}
       onDragLeave={handleBackgroundDragLeave}
       onDrop={handleBackgroundDrop}
