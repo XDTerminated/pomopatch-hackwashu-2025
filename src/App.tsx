@@ -628,7 +628,7 @@ function App() {
     <>
       {/* Custom Cursor */}
       <img
-        src="/Sprites/UI/cursor.png"
+        src={draggedSeed || draggedTool || attachedSproutId ? "/Sprites/UI/cursorgrab.png" : "/Sprites/UI/cursor.png"}
         alt="cursor"
         className="image-pixelated pointer-events-none fixed object-contain"
         style={{
