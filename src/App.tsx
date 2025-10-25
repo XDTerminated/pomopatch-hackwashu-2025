@@ -596,27 +596,35 @@ function App() {
               alt="packet ui"
             />
             <ol className="absolute inset-0 flex flex-row justify-between items-center gap-3 px-10">
-              {seedPackets.map((seed) => (
-                <li
-                  key={seed.id}
-                  onMouseDown={handleSeedMouseDown(seed)}
-                  onMouseEnter={() => playSound("/Audio/interact.mp3")}
-                  className={`size-16 flex justify-center items-center flex-col gap-0.5 cursor-grab active:cursor-grabbing active:scale-95 transition-all ${
-                    draggedSeed?.id === seed.id
-                      ? "opacity-50"
-                      : "opacity-100 wiggle-hover"
-                  }`}
-                >
-                  <img
-                    src={seed.image}
-                    className="w-fit h-full image-pixelated object-contain pointer-events-none"
-                    alt={`${seed.type} packet`}
-                  />
-                  <div className="text-xs pointer-events-none">
-                    ${seed.price}
-                  </div>
-                </li>
-              ))}
+              {seedPackets.map((seed) => {
+                const canAfford = money >= seed.price;
+                return (
+                  <li
+                    key={seed.id}
+                    onMouseDown={canAfford ? handleSeedMouseDown(seed) : undefined}
+                    onMouseEnter={() => canAfford && playSound("/Audio/interact.mp3")}
+                    className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all ${
+                      draggedSeed?.id === seed.id
+                        ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95"
+                        : canAfford
+                        ? "opacity-100 cursor-grab active:cursor-grabbing active:scale-95 wiggle-hover"
+                        : "opacity-30 cursor-not-allowed"
+                    }`}
+                    style={{
+                      filter: !canAfford ? "grayscale(100%)" : "none",
+                    }}
+                  >
+                    <img
+                      src={seed.image}
+                      className="w-fit h-full image-pixelated object-contain pointer-events-none"
+                      alt={`${seed.type} packet`}
+                    />
+                    <div className={`text-xs pointer-events-none ${!canAfford ? "text-red-600" : ""}`}>
+                      ${seed.price}
+                    </div>
+                  </li>
+                );
+              })}
             </ol>
           </div>
           <div className="flex justify-center">
