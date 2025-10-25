@@ -1,7 +1,6 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import "./globals.css";
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
@@ -13,37 +12,29 @@ function App() {
   }
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <main className="h-screen w-full bg-black flex justify-center">
+      <div className="h-full w-full flex flex-col justify-between">
+        <div className="flex flex-row justify-between h-fit w-full p-8">
+          <ol className="bg-white p-2 h-fit w-fit flex flex-row gap-2">
+            <li className="bg-neutral-200 p-2 size-18 items-center flex">
+              <img src="https://placehold.co/400x400?text=Shovel+lol"></img>
+            </li>
+            <li className="bg-neutral-200 p-2 size-18 items-center flex">
+              <img src="https://placehold.co/400x400?text=Pack+lol"></img>
+            </li>
+            <li className="bg-neutral-200 p-2 size-18 items-center flex">
+              <img src="https://placehold.co/400x400?text=Pack2+lol"></img>
+            </li>
+          </ol>
+          <div className="flex items-center justify-center">
+            <div className="text-2xl text-white font-bold">$100</div>
+          </div>
+        </div>
+        <div className="p-8 flex flex-row justify-between items-center">
+          <div className="size-20 rounded-full bg-neutral-200"></div>
+          <div className="text-2xl text-white font-bold">5:00</div>
+        </div>
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
     </main>
   );
 }
