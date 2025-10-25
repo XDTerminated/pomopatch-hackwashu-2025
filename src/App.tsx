@@ -126,6 +126,13 @@ function App() {
     img.src =
       "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
     e.dataTransfer.setDragImage(img, 0, 0);
+
+    // Play tool-specific sound when starting to drag
+    if (tool.type === "WateringCan") {
+      playSound("/Audio/wateringcan.mp3");
+    } else if (tool.type === "Fertilizer") {
+      playSound("/Audio/fertilizer.mp3");
+    }
   };
 
   const handleToolDragEnd = () => {
