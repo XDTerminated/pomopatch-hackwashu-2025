@@ -41,6 +41,12 @@ function App() {
   const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
   const [isHoveringDollarSign, setIsHoveringDollarSign] = useState(false);
 
+  // Function to play sounds
+  const playSound = (soundPath: string) => {
+    const audio = new Audio(soundPath);
+    audio.play().catch((error) => console.log("Audio play failed:", error));
+  };
+
   const seedPackets: SeedPacket[] = [
     {
       id: "berry",
@@ -191,6 +197,7 @@ function App() {
       // If collision or in UI area, don't place and don't deduct money
     } else if (draggedTool && hoveredSproutId) {
       // Attach the sprout to cursor when spade is released
+      playSound("/Audio/shovel.mp3");
       setAttachedSproutId(hoveredSproutId);
       setHoveredSproutId(null);
     }
@@ -331,6 +338,7 @@ function App() {
                   draggable
                   onDragStart={handleDragStart(seed)}
                   onDragEnd={handleDragEnd}
+                  onMouseEnter={() => playSound("/Audio/hover.mp3")}
                   className={`size-16 flex justify-center items-center flex-col gap-0.5 cursor-grab active:cursor-grabbing transition-all hover:scale-110 ${
                     draggedSeed?.id === seed.id ? "opacity-50" : "opacity-100"
                   }`}
@@ -371,7 +379,11 @@ function App() {
                       onDragStart={handleToolDragStart(tool)}
                       onDragEnd={handleToolDragEnd}
                       onMouseEnter={() => {
-                        if (showDollarSign) setIsHoveringDollarSign(true);
+                        if (showDollarSign) {
+                          setIsHoveringDollarSign(true);
+                        } else if (!attachedSproutId) {
+                          playSound("/Audio/hover.mp3");
+                        }
                       }}
                       onMouseLeave={() => {
                         if (showDollarSign) setIsHoveringDollarSign(false);
