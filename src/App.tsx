@@ -217,25 +217,33 @@ function App() {
 
         setPlacedSprouts([...placedSprouts, newSprout]);
         playSound("/Audio/placingPlant.mp3");
+      } else {
+        // Can't place - collision or in UI area
+        playSound("/Audio/error.mp3");
       }
       // If collision or in UI area, don't place and don't deduct money
-    } else if (draggedTool && hoveredSproutId) {
-      // Check tool type for different behaviors
-      if (draggedTool.type === "Spade") {
-        // Attach the sprout to cursor when spade is released
-        playSound("/Audio/shovel.mp3");
-        setAttachedSproutId(hoveredSproutId);
-        setHoveredSproutId(null);
-      } else if (draggedTool.type === "Fertilizer") {
-        // Apply fertilizer to the plant
-        playSound("/Audio/fertilizerUse.mp3");
-        // TODO: Add fertilizer effect to the sprout
-        setHoveredSproutId(null);
-      } else if (draggedTool.type === "WateringCan") {
-        // Apply water to the plant
-        playSound("/Audio/wateringcan.mp3");
-        // TODO: Add watering effect to the sprout
-        setHoveredSproutId(null);
+    } else if (draggedTool) {
+      if (hoveredSproutId) {
+        // Check tool type for different behaviors
+        if (draggedTool.type === "Spade") {
+          // Attach the sprout to cursor when spade is released
+          playSound("/Audio/shovel.mp3");
+          setAttachedSproutId(hoveredSproutId);
+          setHoveredSproutId(null);
+        } else if (draggedTool.type === "Fertilizer") {
+          // Apply fertilizer to the plant
+          playSound("/Audio/fertilizerUse.mp3");
+          // TODO: Add fertilizer effect to the sprout
+          setHoveredSproutId(null);
+        } else if (draggedTool.type === "WateringCan") {
+          // Apply water to the plant
+          playSound("/Audio/wateringcan.mp3");
+          // TODO: Add watering effect to the sprout
+          setHoveredSproutId(null);
+        }
+      } else {
+        // Tool used on empty ground - play error sound
+        playSound("/Audio/error.mp3");
       }
     }
   };
@@ -308,6 +316,9 @@ function App() {
         );
         setAttachedSproutId(null);
         playSound("/Audio/placingPlant.mp3");
+      } else {
+        // Can't place - collision or in UI area
+        playSound("/Audio/error.mp3");
       }
       // If collision or in UI area, don't place and keep sprout attached
     }
@@ -315,7 +326,13 @@ function App() {
 
   return (
     <main
-      className="h-screen w-full bg-[#547E64] flex justify-center relative"
+      className="h-screen w-full flex justify-center relative"
+      style={{
+        backgroundImage: "url('/Sprites/UI/background.png')",
+        backgroundRepeat: "repeat",
+        backgroundSize: "100px 100px",
+        imageRendering: "pixelated",
+      }}
       onDragOver={handleBackgroundDragOver}
       onDragLeave={handleBackgroundDragLeave}
       onDrop={handleBackgroundDrop}
