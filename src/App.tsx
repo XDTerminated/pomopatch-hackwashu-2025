@@ -38,6 +38,7 @@ interface TrailParticle {
   id: string;
   x: number;
   y: number;
+  size: number;
 }
 
 function App() {
@@ -64,7 +65,8 @@ function App() {
   // Function to play sounds
   const playSound = (soundPath: string) => {
     const audio = new Audio(soundPath);
-    audio.play().catch((error) => console.log("Audio play failed:", error));
+    audio.volume = 0.5; // Set volume to 50%
+    audio.play().catch((error) => console.error("Audio play failed:", error, "Path:", soundPath));
   };
 
   const seedPackets: SeedPacket[] = [
@@ -196,20 +198,31 @@ function App() {
       );
 
       // Only create trail if cursor moved enough
-      if (distance > 15) {
-        const trailId = `trail-${Date.now()}`;
-        const newTrail: TrailParticle = {
-          id: trailId,
-          x: newPosition.x,
-          y: newPosition.y,
-        };
-        setTrailParticles((prev) => [...prev, newTrail]);
+      if (distance > 10) {
+        // Create multiple particles with slight randomization
+        const particleCount = 2;
+        const newTrails: TrailParticle[] = [];
 
-        // Remove trail particle after animation
-        setTimeout(() => {
-          setTrailParticles((prev) => prev.filter((t) => t.id !== trailId));
-        }, 500);
+        for (let i = 0; i < particleCount; i++) {
+          const offsetX = (Math.random() - 0.5) * 20;
+          const offsetY = (Math.random() - 0.5) * 20;
+          const trailId = `trail-${Date.now()}-${i}`;
+          const size = Math.floor(Math.random() * 3) + 3; // Random size between 3-5px
 
+          newTrails.push({
+            id: trailId,
+            x: newPosition.x + offsetX,
+            y: newPosition.y + offsetY,
+            size: size,
+          });
+
+          // Remove trail particle after animation
+          setTimeout(() => {
+            setTrailParticles((prev) => prev.filter((t) => t.id !== trailId));
+          }, 500);
+        }
+
+        setTrailParticles((prev) => [...prev, ...newTrails]);
         setLastCursorPosition(newPosition);
       }
       return;
@@ -431,7 +444,11 @@ function App() {
                   : "none",
               transition: isAttached ? "none" : "all 0.3s",
               zIndex: isAttached ? 9999 : 1,
-              animation: isNewlyPlaced ? "settle 0.4s ease-out" : "none",
+              animation: isAttached
+                ? "shake 0.15s ease-in-out infinite"
+                : isNewlyPlaced
+                ? "settle 0.4s ease-out"
+                : "none",
             }}
           />
         );
@@ -488,21 +505,26 @@ function App() {
       })()}
 
       {/* Trail particles */}
-      {trailParticles.map((trail) => (
-        <img
-          key={trail.id}
-          src="/Sprites/basicSprout.png"
-          alt="trail"
-          className="image-pixelated pointer-events-none absolute w-16 h-16 object-contain"
-          style={{
-            left: trail.x - 32,
-            top: trail.y - 32,
-            zIndex: 1,
-            opacity: 0.6,
-            animation: "trailFade 0.5s ease-out forwards",
-          }}
-        />
-      ))}
+      {trailParticles.map((trail) => {
+        const halfSize = trail.size / 2;
+        return (
+          <div
+            key={trail.id}
+            className="pointer-events-none absolute"
+            style={{
+              left: trail.x - halfSize,
+              top: trail.y - halfSize,
+              width: `${trail.size}px`,
+              height: `${trail.size}px`,
+              zIndex: 1,
+              opacity: 0.7,
+              animation: "trailFade 0.5s ease-out forwards",
+              backgroundColor: "#654321",
+              imageRendering: "pixelated",
+            }}
+          />
+        );
+      })}
 
       {/* Coin particles */}
       {coinParticles.map((coin) => {
