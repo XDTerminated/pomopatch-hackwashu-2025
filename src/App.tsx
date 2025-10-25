@@ -108,6 +108,7 @@ function App() {
   const [weather, setWeather] = useState<WeatherType>("rainy");
   const [toolParticles, setToolParticles] = useState<ToolParticle[]>([]);
   const [hoveredPacketId, setHoveredPacketId] = useState<string | null>(null);
+  const [customCursorPosition, setCustomCursorPosition] = useState({ x: 0, y: 0 });
 
   // Function to play sounds
   const playSound = (soundPath: string) => {
@@ -292,6 +293,7 @@ function App() {
   const handleMouseMove = (e: React.MouseEvent) => {
     const newPosition = { x: e.clientX, y: e.clientY };
     setCursorPosition(newPosition);
+    setCustomCursorPosition(newPosition);
 
     // Create trail particles when dragging attached sprout
     if (attachedSproutId) {
@@ -624,6 +626,22 @@ function App() {
 
   return (
     <>
+      {/* Custom Cursor */}
+      <img
+        src="/Sprites/UI/cursor.png"
+        alt="cursor"
+        className="image-pixelated pointer-events-none fixed object-contain"
+        style={{
+          left: customCursorPosition.x,
+          top: customCursorPosition.y,
+          width: "24px",
+          height: "24px",
+          transform: "translate(-50%, -50%)",
+          zIndex: 99999,
+        }}
+        draggable={false}
+      />
+
       {/* Weather effects - Rain */}
       {weather === "rainy" && <Rain rainDrops={rainDrops} />}
 
