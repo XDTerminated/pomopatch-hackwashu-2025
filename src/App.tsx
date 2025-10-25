@@ -193,6 +193,7 @@ function App() {
         };
 
         setPlacedSprouts([...placedSprouts, newSprout]);
+        playSound("/Audio/placingPlant.mp3");
       }
       // If collision or in UI area, don't place and don't deduct money
     } else if (draggedTool && hoveredSproutId) {
@@ -239,6 +240,7 @@ function App() {
           )
         );
         setAttachedSproutId(null);
+        playSound("/Audio/placingPlant.mp3");
       }
       // If collision or in UI area, don't place and keep sprout attached
     }
