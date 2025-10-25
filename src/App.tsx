@@ -545,21 +545,9 @@ function App() {
                   key={seed.id}
                   onMouseDown={handleSeedMouseDown(seed)}
                   onMouseEnter={() => playSound("/Audio/interact.mp3")}
-                  className={`size-16 flex justify-center items-center flex-col gap-0.5 cursor-grab active:cursor-grabbing active:scale-95 ${
-                    draggedSeed?.id === seed.id ? "opacity-50" : "opacity-100"
+                  className={`size-16 flex justify-center items-center flex-col gap-0.5 cursor-grab active:cursor-grabbing active:scale-95 transition-all ${
+                    draggedSeed?.id === seed.id ? "opacity-50" : "opacity-100 wiggle-hover"
                   }`}
-                  style={{
-                    animation: draggedSeed?.id !== seed.id ? "none" : "none",
-                    transition: "all 0.15s ease-out",
-                  }}
-                  onMouseOver={(e) => {
-                    if (draggedSeed?.id !== seed.id) {
-                      e.currentTarget.style.animation = "wiggle 0.3s ease-in-out";
-                    }
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.animation = "none";
-                  }}
                 >
                   <img
                     src={seed.image}
@@ -609,27 +597,18 @@ function App() {
                       onMouseLeave={() => {
                         if (showDollarSign) setIsHoveringDollarSign(false);
                       }}
-                      onMouseOver={(e) => {
-                        if (!attachedSproutId || showDollarSign) {
-                          e.currentTarget.style.animation = "wiggle 0.3s ease-in-out";
-                        }
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.animation = "none";
-                      }}
-                      className={`absolute inset-0 flex justify-center items-center active:scale-95 ${
+                      className={`absolute inset-0 flex justify-center items-center active:scale-95 transition-all ${
                         attachedSproutId && !showDollarSign
                           ? "opacity-30 cursor-not-allowed"
                           : showDollarSign
-                          ? "opacity-100 cursor-pointer"
+                          ? "opacity-100 cursor-pointer wiggle-hover"
                           : draggedTool?.id === tool.id
                           ? "opacity-50 cursor-grab active:cursor-grabbing"
-                          : "opacity-100 cursor-grab active:cursor-grabbing"
+                          : "opacity-100 cursor-grab active:cursor-grabbing wiggle-hover"
                       }`}
                       style={{
                         pointerEvents:
                           attachedSproutId && !showDollarSign ? "none" : "auto",
-                        transition: "all 0.15s ease-out",
                       }}
                     >
                       <img
