@@ -9,3 +9,14 @@ body {
     image-rendering: pixelated;
   }
 }
+
+@keyframes coinFly {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--target-x), var(--target-y)) scale(0.5);
+    opacity: 0;
+  }
+}
