@@ -128,7 +128,9 @@ function App() {
     e.dataTransfer.setDragImage(img, 0, 0);
 
     // Play tool-specific sound when starting to drag
-    if (tool.type === "WateringCan") {
+    if (tool.type === "Spade") {
+      playSound("/Audio/spadeclink.mp3");
+    } else if (tool.type === "WateringCan") {
       playSound("/Audio/wateringcan.mp3");
     } else if (tool.type === "Fertilizer") {
       playSound("/Audio/fertilizer.mp3");
@@ -218,10 +220,23 @@ function App() {
       }
       // If collision or in UI area, don't place and don't deduct money
     } else if (draggedTool && hoveredSproutId) {
-      // Attach the sprout to cursor when spade is released
-      playSound("/Audio/shovel.mp3");
-      setAttachedSproutId(hoveredSproutId);
-      setHoveredSproutId(null);
+      // Check tool type for different behaviors
+      if (draggedTool.type === "Spade") {
+        // Attach the sprout to cursor when spade is released
+        playSound("/Audio/shovel.mp3");
+        setAttachedSproutId(hoveredSproutId);
+        setHoveredSproutId(null);
+      } else if (draggedTool.type === "Fertilizer") {
+        // Apply fertilizer to the plant
+        playSound("/Audio/fertilizerUse.mp3");
+        // TODO: Add fertilizer effect to the sprout
+        setHoveredSproutId(null);
+      } else if (draggedTool.type === "WateringCan") {
+        // Apply water to the plant
+        playSound("/Audio/wateringcan.mp3");
+        // TODO: Add watering effect to the sprout
+        setHoveredSproutId(null);
+      }
     }
   };
 
@@ -505,7 +520,7 @@ function App() {
                     </div>
                   </div>
                   {tool.price && !showDollarSign && (
-                    <div className="text-xs text-white font-bold">
+                    <div className="text-base text-white font-bold">
                       ${tool.price}
                     </div>
                   )}
