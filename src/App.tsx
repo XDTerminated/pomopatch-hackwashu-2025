@@ -105,7 +105,10 @@ function App() {
   const [lastCursorPosition, setLastCursorPosition] = useState({ x: 0, y: 0 });
   const [wobbleAudio, setWobbleAudio] = useState<HTMLAudioElement | null>(null);
   const [rainDrops, setRainDrops] = useState<RainDrop[]>([]);
-  const [weather, setWeather] = useState<WeatherType>("rainy");
+  const [weather, setWeather] = useState<WeatherType>(() => {
+    const weatherTypes: WeatherType[] = ["sunny", "rainy", "cloudy"];
+    return weatherTypes[Math.floor(Math.random() * weatherTypes.length)];
+  });
   const [toolParticles, setToolParticles] = useState<ToolParticle[]>([]);
   const [hoveredPacketId, setHoveredPacketId] = useState<string | null>(null);
   const [customCursorPosition, setCustomCursorPosition] = useState({ x: 0, y: 0 });
@@ -662,7 +665,19 @@ function App() {
         <div
           className="pointer-events-none absolute inset-0"
           style={{
-            backgroundColor: "rgba(255, 223, 128, 0.2)",
+            backgroundColor: "rgba(255, 230, 100, 0.35)",
+            mixBlendMode: "multiply",
+            zIndex: 0,
+          }}
+        />
+      )}
+
+      {/* Rainy weather tint overlay */}
+      {weather === "rainy" && (
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundColor: "rgba(100, 120, 140, 0.4)",
             mixBlendMode: "multiply",
             zIndex: 0,
           }}
@@ -1000,12 +1015,15 @@ function App() {
             </ol>
           </div>
           {/* Weather Icon Display */}
-          <img
-            src={getWeatherIcon()}
-            alt={`${weather} weather`}
-            className="image-pixelated w-12 h-12 object-contain"
-            draggable={false}
-          />
+          <div className="flex flex-col items-center gap-1">
+            <img
+              src={getWeatherIcon()}
+              alt={`${weather} weather`}
+              className="image-pixelated w-12 h-12 object-contain"
+              draggable={false}
+            />
+            <div className="text-xs text-white font-bold capitalize">{weather}</div>
+          </div>
         </div>
           <div className="flex justify-center">
             <div className="text-5xl text-white font-bold">${money}</div>
