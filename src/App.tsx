@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./globals.css";
 
@@ -59,15 +59,43 @@ function App() {
   const [trailParticles, setTrailParticles] = useState<TrailParticle[]>([]);
   const [mouseDownTime, setMouseDownTime] = useState(0);
   const [sproutAttachedTime, setSproutAttachedTime] = useState(0);
-  const [newlyPlacedSproutId, setNewlyPlacedSproutId] = useState<string | null>(null);
+  const [newlyPlacedSproutId, setNewlyPlacedSproutId] = useState<string | null>(
+    null
+  );
   const [lastCursorPosition, setLastCursorPosition] = useState({ x: 0, y: 0 });
+  const [wobbleAudio, setWobbleAudio] = useState<HTMLAudioElement | null>(null);
 
   // Function to play sounds
   const playSound = (soundPath: string) => {
     const audio = new Audio(soundPath);
     audio.volume = 0.5; // Set volume to 50%
-    audio.play().catch((error) => console.error("Audio play failed:", error, "Path:", soundPath));
+    audio
+      .play()
+      .catch((error) =>
+        console.error("Audio play failed:", error, "Path:", soundPath)
+      );
   };
+
+  // Handle wobble sound when sprout is attached
+  useEffect(() => {
+    if (attachedSproutId) {
+      // Create and play wobble sound on loop
+      const audio = new Audio("/Audio/wobble.mp3");
+      audio.volume = 0.01;
+      audio.loop = true;
+      audio
+        .play()
+        .catch((error) => console.error("Wobble audio play failed:", error));
+      setWobbleAudio(audio);
+
+      // Cleanup: stop audio when sprout is released
+      return () => {
+        audio.pause();
+        audio.currentTime = 0;
+        setWobbleAudio(null);
+      };
+    }
+  }, [attachedSproutId]);
 
   const seedPackets: SeedPacket[] = [
     {
@@ -139,7 +167,6 @@ function App() {
     }
   };
 
-
   const findSproutAtPosition = (x: number, y: number): string | null => {
     // Check if any sprout is within 48px (half of 96px width) of the cursor
     const sprout = placedSprouts.find((s) => {
@@ -181,7 +208,8 @@ function App() {
 
     // Bottom right - timer
     // Block last 350px, bottom 200px
-    if (y > window.innerHeight - 200 && x > window.innerWidth - 350) return true;
+    if (y > window.innerHeight - 200 && x > window.innerWidth - 350)
+      return true;
 
     return false;
   };
@@ -194,7 +222,7 @@ function App() {
     if (attachedSproutId) {
       const distance = Math.sqrt(
         Math.pow(newPosition.x - lastCursorPosition.x, 2) +
-        Math.pow(newPosition.y - lastCursorPosition.y, 2)
+          Math.pow(newPosition.y - lastCursorPosition.y, 2)
       );
 
       // Only create trail if cursor moved enough
@@ -311,7 +339,11 @@ function App() {
   const handleClick = (e: React.MouseEvent) => {
     const timeSinceMouseDown = Date.now() - mouseDownTime;
     const timeSinceSproutAttached = Date.now() - sproutAttachedTime;
-    console.log("🖱️ Click event", { timeSinceMouseDown, timeSinceSproutAttached, attachedSproutId });
+    console.log("🖱️ Click event", {
+      timeSinceMouseDown,
+      timeSinceSproutAttached,
+      attachedSproutId,
+    });
 
     // If a sprout was just attached, ignore clicks for 200ms to prevent immediate placement
     if (attachedSproutId && timeSinceSproutAttached < 200) {
@@ -485,24 +517,26 @@ function App() {
         })()}
 
       {/* Tool drag preview */}
-      {draggedTool && !attachedSproutId && (() => {
-        // Calculate rotation based on cursor velocity (approximated by last position)
-        const rotation = hoveredSproutId ? 15 : 0;
-        return (
-          <img
-            src={draggedTool.image}
-            alt="tool preview"
-            className="image-pixelated pointer-events-none absolute h-12 w-auto object-contain"
-            style={{
-              left: dragPosition.x - 24,
-              top: dragPosition.y - 24,
-              zIndex: 9999,
-              transform: `rotate(${rotation}deg)`,
-              transition: "transform 0.2s ease-out",
-            }}
-          />
-        );
-      })()}
+      {draggedTool &&
+        !attachedSproutId &&
+        (() => {
+          // Calculate rotation based on cursor velocity (approximated by last position)
+          const rotation = hoveredSproutId ? 15 : 0;
+          return (
+            <img
+              src={draggedTool.image}
+              alt="tool preview"
+              className="image-pixelated pointer-events-none absolute h-12 w-auto object-contain"
+              style={{
+                left: dragPosition.x - 24,
+                top: dragPosition.y - 24,
+                zIndex: 9999,
+                transform: `rotate(${rotation}deg)`,
+                transition: "transform 0.2s ease-out",
+              }}
+            />
+          );
+        })()}
 
       {/* Trail particles */}
       {trailParticles.map((trail) => {
@@ -568,7 +602,9 @@ function App() {
                   onMouseDown={handleSeedMouseDown(seed)}
                   onMouseEnter={() => playSound("/Audio/interact.mp3")}
                   className={`size-16 flex justify-center items-center flex-col gap-0.5 cursor-grab active:cursor-grabbing active:scale-95 transition-all ${
-                    draggedSeed?.id === seed.id ? "opacity-50" : "opacity-100 wiggle-hover"
+                    draggedSeed?.id === seed.id
+                      ? "opacity-50"
+                      : "opacity-100 wiggle-hover"
                   }`}
                 >
                   <img
@@ -608,7 +644,11 @@ function App() {
                       alt="tool ui background"
                     />
                     <div
-                      onMouseDown={!attachedSproutId ? handleToolMouseDown(tool) : undefined}
+                      onMouseDown={
+                        !attachedSproutId
+                          ? handleToolMouseDown(tool)
+                          : undefined
+                      }
                       onMouseEnter={() => {
                         if (showDollarSign) {
                           setIsHoveringDollarSign(true);
