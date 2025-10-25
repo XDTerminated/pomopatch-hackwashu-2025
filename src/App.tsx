@@ -123,7 +123,8 @@ function App() {
     e.dataTransfer.setData("text/plain", tool.id);
     // Create an invisible drag image
     const img = new Image();
-    img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+    img.src =
+      "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
     e.dataTransfer.setDragImage(img, 0, 0);
   };
 
@@ -142,7 +143,11 @@ function App() {
     return sprout ? sprout.id : null;
   };
 
-  const checkCollision = (x: number, y: number, excludeId?: string): boolean => {
+  const checkCollision = (
+    x: number,
+    y: number,
+    excludeId?: string
+  ): boolean => {
     // Check if position collides with any other sprout (within 30px - allows very close placement)
     return placedSprouts.some((s) => {
       if (excludeId && s.id === excludeId) return false; // Exclude the sprout being moved
@@ -222,9 +227,13 @@ function App() {
       // Check if clicking on dollar sign to sell sprout
       if (isHoveringDollarSign) {
         // Sell the sprout - remove it and refund half the price
-        const sproutToSell = placedSprouts.find(s => s.id === attachedSproutId);
+        const sproutToSell = placedSprouts.find(
+          (s) => s.id === attachedSproutId
+        );
         if (sproutToSell) {
-          const seedPrice = seedPackets.find(p => p.type === sproutToSell.seedType)?.price || 0;
+          const seedPrice =
+            seedPackets.find((p) => p.type === sproutToSell.seedType)?.price ||
+            0;
           const refund = Math.floor(seedPrice / 2);
 
           // Create coin particles at cursor position
@@ -242,11 +251,15 @@ function App() {
 
           // Remove coins after animation
           setTimeout(() => {
-            setCoinParticles((prev) => prev.filter((c) => !newCoins.find((nc) => nc.id === c.id)));
+            setCoinParticles((prev) =>
+              prev.filter((c) => !newCoins.find((nc) => nc.id === c.id))
+            );
           }, 1000);
 
           setMoney(money + refund);
-          setPlacedSprouts(placedSprouts.filter(s => s.id !== attachedSproutId));
+          setPlacedSprouts(
+            placedSprouts.filter((s) => s.id !== attachedSproutId)
+          );
           setAttachedSproutId(null);
           setIsHoveringDollarSign(false);
           playSound("/Audio/sell.mp3");
@@ -255,7 +268,11 @@ function App() {
       }
 
       // Check for collision and UI area before placing
-      const hasCollision = checkCollision(e.clientX, e.clientY, attachedSproutId);
+      const hasCollision = checkCollision(
+        e.clientX,
+        e.clientY,
+        attachedSproutId
+      );
       const inUIArea = isInUIArea(e.clientX, e.clientY);
 
       if (!hasCollision && !inUIArea) {
@@ -287,8 +304,11 @@ function App() {
       {placedSprouts.map((sprout) => {
         const isAttached = attachedSproutId === sprout.id;
         const isHovered = hoveredSproutId === sprout.id;
-        const hasCollision = isAttached && checkCollision(cursorPosition.x, cursorPosition.y, sprout.id);
-        const inUIArea = isAttached && isInUIArea(cursorPosition.x, cursorPosition.y);
+        const hasCollision =
+          isAttached &&
+          checkCollision(cursorPosition.x, cursorPosition.y, sprout.id);
+        const inUIArea =
+          isAttached && isInUIArea(cursorPosition.x, cursorPosition.y);
 
         return (
           <img
@@ -300,12 +320,13 @@ function App() {
               left: isAttached ? cursorPosition.x - 48 : sprout.x - 48,
               top: isAttached ? cursorPosition.y - 48 : sprout.y - 48,
               opacity: isAttached ? 0.7 : 1,
-              filter: hasCollision || inUIArea
-                ? 'sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)'
-                : isHovered && !isAttached
-                ? 'brightness(1.3)'
-                : 'none',
-              transition: isAttached ? 'none' : 'all 0.3s',
+              filter:
+                hasCollision || inUIArea
+                  ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)"
+                  : isHovered && !isAttached
+                  ? "brightness(1.3)"
+                  : "none",
+              transition: isAttached ? "none" : "all 0.3s",
               zIndex: isAttached ? 9999 : 1,
             }}
           />
@@ -313,32 +334,34 @@ function App() {
       })}
 
       {/* Seed drag preview */}
-      {isDraggingOverBackground && draggedSeed && (() => {
-        const hasCollision = checkCollision(dragPosition.x, dragPosition.y);
-        const inUIArea = isInUIArea(dragPosition.x, dragPosition.y);
-        const canAfford = money >= draggedSeed.price;
+      {isDraggingOverBackground &&
+        draggedSeed &&
+        (() => {
+          const hasCollision = checkCollision(dragPosition.x, dragPosition.y);
+          const inUIArea = isInUIArea(dragPosition.x, dragPosition.y);
+          const canAfford = money >= draggedSeed.price;
 
-        return (
-          <div
-            className="image-pixelated pointer-events-none absolute w-24 h-24"
-            style={{
-              left: dragPosition.x - 48,
-              top: dragPosition.y - 48,
-              filter:
-                hasCollision || !canAfford || inUIArea
-                  ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)"
-                  : "brightness(1.2) saturate(1.5) contrast(1.1)",
-              zIndex: 9999,
-            }}
-          >
-            <img
-              src="/Sprites/basicSprout.png"
-              alt="sprout preview"
-              className="w-full h-full object-contain"
-            />
-          </div>
-        );
-      })()}
+          return (
+            <div
+              className="image-pixelated pointer-events-none absolute w-24 h-24"
+              style={{
+                left: dragPosition.x - 48,
+                top: dragPosition.y - 48,
+                filter:
+                  hasCollision || !canAfford || inUIArea
+                    ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)"
+                    : "brightness(1.2) saturate(1.5) contrast(1.1)",
+                zIndex: 9999,
+              }}
+            >
+              <img
+                src="/Sprites/basicSprout.png"
+                alt="sprout preview"
+                className="w-full h-full object-contain"
+              />
+            </div>
+          );
+        })()}
 
       {/* Tool drag preview */}
       {draggedTool && (
@@ -366,15 +389,17 @@ function App() {
             src="/Sprites/coin.png"
             alt="coin"
             className="image-pixelated pointer-events-none absolute w-8 h-8 object-contain animate-coin-fly"
-            style={{
-              left: coin.startX,
-              top: coin.startY,
-              zIndex: 10000,
-              animation: `coinFly 1s ease-out forwards`,
-              animationDelay: `${Math.random() * 0.1}s`,
-              '--target-x': `${targetX - coin.startX}px`,
-              '--target-y': `${targetY - coin.startY}px`,
-            } as React.CSSProperties}
+            style={
+              {
+                left: coin.startX,
+                top: coin.startY,
+                zIndex: 10000,
+                animation: `coinFly 1s ease-out forwards`,
+                animationDelay: `${Math.random() * 0.1}s`,
+                "--target-x": `${targetX - coin.startX}px`,
+                "--target-y": `${targetY - coin.startY}px`,
+              } as React.CSSProperties
+            }
           />
         );
       })}
@@ -394,7 +419,7 @@ function App() {
                   draggable
                   onDragStart={handleDragStart(seed)}
                   onDragEnd={handleDragEnd}
-                  onMouseEnter={() => playSound("/Audio/hover.mp3")}
+                  onMouseEnter={() => playSound("/Audio/interact.mp3")}
                   className={`size-16 flex justify-center items-center flex-col gap-0.5 cursor-grab active:cursor-grabbing transition-all hover:scale-110 ${
                     draggedSeed?.id === seed.id ? "opacity-50" : "opacity-100"
                   }`}
@@ -420,10 +445,15 @@ function App() {
             {tools.map((tool) => {
               // Show dollar sign for spade when sprout is attached
               const showDollarSign = tool.type === "Spade" && attachedSproutId;
-              const displayImage = showDollarSign ? "/Sprites/UI/dollarsign.png" : tool.image;
+              const displayImage = showDollarSign
+                ? "/Sprites/UI/dollarsign.png"
+                : tool.image;
 
               return (
-                <div key={tool.id} className="relative w-fit h-fit flex flex-col items-center gap-1">
+                <div
+                  key={tool.id}
+                  className="relative w-fit h-fit flex flex-col items-center gap-1"
+                >
                   <div className="relative w-fit h-fit">
                     <img
                       src="/Sprites/UI/SpadeUI.png"
@@ -438,7 +468,7 @@ function App() {
                         if (showDollarSign) {
                           setIsHoveringDollarSign(true);
                         } else if (!attachedSproutId) {
-                          playSound("/Audio/hover.mp3");
+                          playSound("/Audio/interact.mp3");
                         }
                       }}
                       onMouseLeave={() => {
@@ -454,18 +484,23 @@ function App() {
                           : "opacity-100 cursor-grab active:cursor-grabbing hover:scale-110"
                       }`}
                       style={{
-                        pointerEvents: attachedSproutId && !showDollarSign ? "none" : "auto",
+                        pointerEvents:
+                          attachedSproutId && !showDollarSign ? "none" : "auto",
                       }}
                     >
                       <img
                         src={displayImage}
                         className="h-12 w-auto image-pixelated object-contain pointer-events-none"
-                        alt={showDollarSign ? "Sell sprout" : `${tool.type} tool`}
+                        alt={
+                          showDollarSign ? "Sell sprout" : `${tool.type} tool`
+                        }
                       />
                     </div>
                   </div>
                   {tool.price && !showDollarSign && (
-                    <div className="text-xs text-white font-bold">${tool.price}</div>
+                    <div className="text-xs text-white font-bold">
+                      ${tool.price}
+                    </div>
                   )}
                 </div>
               );
