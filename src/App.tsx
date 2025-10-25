@@ -39,6 +39,7 @@ function App() {
   const [hoveredSproutId, setHoveredSproutId] = useState<string | null>(null);
   const [attachedSproutId, setAttachedSproutId] = useState<string | null>(null);
   const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
+  const [isHoveringDollarSign, setIsHoveringDollarSign] = useState(false);
 
   const seedPackets: SeedPacket[] = [
     {
@@ -201,6 +202,22 @@ function App() {
 
   const handleClick = (e: React.MouseEvent) => {
     if (attachedSproutId) {
+      // Check if clicking on dollar sign to sell sprout
+      if (isHoveringDollarSign) {
+        // Sell the sprout - remove it and refund half the price
+        const sproutToSell = placedSprouts.find(s => s.id === attachedSproutId);
+        if (sproutToSell) {
+          const seedPrice = seedPackets.find(p => p.type === sproutToSell.seedType)?.price || 0;
+          const refund = Math.floor(seedPrice / 2);
+
+          setMoney(money + refund);
+          setPlacedSprouts(placedSprouts.filter(s => s.id !== attachedSproutId));
+          setAttachedSproutId(null);
+          setIsHoveringDollarSign(false);
+        }
+        return;
+      }
+
       // Check for collision and UI area before placing
       const hasCollision = checkCollision(e.clientX, e.clientY, attachedSproutId);
       const inUIArea = isInUIArea(e.clientX, e.clientY);
@@ -252,6 +269,7 @@ function App() {
                 ? 'brightness(1.3)'
                 : 'none',
               transition: isAttached ? 'none' : 'all 0.3s',
+              zIndex: isAttached ? 9999 : 1,
             }}
           />
         );
@@ -273,6 +291,7 @@ function App() {
                 hasCollision || !canAfford || inUIArea
                   ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)"
                   : "brightness(1.2) saturate(1.5) contrast(1.1)",
+              zIndex: 9999,
             }}
           >
             <img
@@ -293,6 +312,7 @@ function App() {
           style={{
             left: dragPosition.x - 24,
             top: dragPosition.y - 24,
+            zIndex: 9999,
           }}
         />
       )}
@@ -333,41 +353,55 @@ function App() {
         </div>
         <div className="p-8 flex flex-row justify-between items-center">
           <div className="flex flex-row gap-4">
-            {tools.map((tool) => (
-              <div key={tool.id} className="relative w-fit h-fit flex flex-col items-center gap-1">
-                <div className="relative w-fit h-fit">
-                  <img
-                    src="/Sprites/UI/SpadeUI.png"
-                    className="image-pixelated w-[100px] h-auto"
-                    alt="tool ui background"
-                  />
-                  <div
-                    draggable={!attachedSproutId}
-                    onDragStart={handleToolDragStart(tool)}
-                    onDragEnd={handleToolDragEnd}
-                    className={`absolute inset-0 flex justify-center items-center transition-all ${
-                      attachedSproutId
-                        ? "opacity-30 cursor-not-allowed"
-                        : draggedTool?.id === tool.id
-                        ? "opacity-50 cursor-grab active:cursor-grabbing"
-                        : "opacity-100 cursor-grab active:cursor-grabbing hover:scale-110"
-                    }`}
-                    style={{
-                      pointerEvents: attachedSproutId ? "none" : "auto",
-                    }}
-                  >
+            {tools.map((tool) => {
+              // Show dollar sign for spade when sprout is attached
+              const showDollarSign = tool.type === "Spade" && attachedSproutId;
+              const displayImage = showDollarSign ? "/Sprites/UI/dollarsign.png" : tool.image;
+
+              return (
+                <div key={tool.id} className="relative w-fit h-fit flex flex-col items-center gap-1">
+                  <div className="relative w-fit h-fit">
                     <img
-                      src={tool.image}
-                      className="h-12 w-auto image-pixelated object-contain pointer-events-none"
-                      alt={`${tool.type} tool`}
+                      src="/Sprites/UI/SpadeUI.png"
+                      className="image-pixelated w-[100px] h-auto"
+                      alt="tool ui background"
                     />
+                    <div
+                      draggable={!attachedSproutId}
+                      onDragStart={handleToolDragStart(tool)}
+                      onDragEnd={handleToolDragEnd}
+                      onMouseEnter={() => {
+                        if (showDollarSign) setIsHoveringDollarSign(true);
+                      }}
+                      onMouseLeave={() => {
+                        if (showDollarSign) setIsHoveringDollarSign(false);
+                      }}
+                      className={`absolute inset-0 flex justify-center items-center transition-all ${
+                        attachedSproutId && !showDollarSign
+                          ? "opacity-30 cursor-not-allowed"
+                          : showDollarSign
+                          ? "opacity-100 cursor-pointer hover:scale-110"
+                          : draggedTool?.id === tool.id
+                          ? "opacity-50 cursor-grab active:cursor-grabbing"
+                          : "opacity-100 cursor-grab active:cursor-grabbing hover:scale-110"
+                      }`}
+                      style={{
+                        pointerEvents: attachedSproutId && !showDollarSign ? "none" : "auto",
+                      }}
+                    >
+                      <img
+                        src={displayImage}
+                        className="h-12 w-auto image-pixelated object-contain pointer-events-none"
+                        alt={showDollarSign ? "Sell sprout" : `${tool.type} tool`}
+                      />
+                    </div>
                   </div>
+                  {tool.price && !showDollarSign && (
+                    <div className="text-xs text-white font-bold">${tool.price}</div>
+                  )}
                 </div>
-                {tool.price && (
-                  <div className="text-xs text-white font-bold">${tool.price}</div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div className="text-5xl text-white font-bold">5:00</div>
         </div>
