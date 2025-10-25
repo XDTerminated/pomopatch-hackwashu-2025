@@ -222,6 +222,7 @@ function App() {
           setPlacedSprouts(placedSprouts.filter(s => s.id !== attachedSproutId));
           setAttachedSproutId(null);
           setIsHoveringDollarSign(false);
+          playSound("/Audio/sell.mp3");
         }
         return;
       }
