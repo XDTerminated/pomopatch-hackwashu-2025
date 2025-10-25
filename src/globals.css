@@ -90,3 +90,14 @@ body {
     opacity: 0.8;
   }
 }
+
+@keyframes toolParticleFloat {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--particle-x), var(--particle-y)) scale(0.3);
+    opacity: 0;
+  }
+}

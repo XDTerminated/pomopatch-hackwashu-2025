@@ -4,6 +4,7 @@ import "./globals.css";
 
 type SeedType = "Berry" | "Fungi" | "Rose";
 type ToolType = "Spade" | "WateringCan" | "Fertilizer";
+type WeatherType = "sunny" | "rainy" | "cloudy";
 
 interface SeedPacket {
   id: string;
@@ -45,6 +46,16 @@ interface RainDrop {
   id: string;
   x: number;
   delay: number;
+}
+
+interface ToolParticle {
+  id: string;
+  x: number;
+  y: number;
+  size: number;
+  color: string;
+  velocityX: number;
+  velocityY: number;
 }
 
 // Memoized Rain component to prevent re-renders on mouse move
@@ -94,7 +105,9 @@ function App() {
   const [lastCursorPosition, setLastCursorPosition] = useState({ x: 0, y: 0 });
   const [wobbleAudio, setWobbleAudio] = useState<HTMLAudioElement | null>(null);
   const [rainDrops, setRainDrops] = useState<RainDrop[]>([]);
-  const [isRaining, setIsRaining] = useState(true);
+  const [weather, setWeather] = useState<WeatherType>("rainy");
+  const [toolParticles, setToolParticles] = useState<ToolParticle[]>([]);
+  const [hoveredPacketId, setHoveredPacketId] = useState<string | null>(null);
 
   // Function to play sounds
   const playSound = (soundPath: string) => {
@@ -128,9 +141,9 @@ function App() {
     }
   }, [attachedSproutId]);
 
-  // Generate rain drops
+  // Generate rain drops when weather changes
   useEffect(() => {
-    if (isRaining) {
+    if (weather === "rainy") {
       const drops: RainDrop[] = [];
       for (let i = 0; i < 50; i++) {
         drops.push({
@@ -143,7 +156,21 @@ function App() {
     } else {
       setRainDrops([]);
     }
-  }, [isRaining]);
+  }, [weather]);
+
+  // Change weather randomly every 60 seconds (simulating timer cycles)
+  useEffect(() => {
+    const changeWeather = () => {
+      const weatherTypes: WeatherType[] = ["sunny", "rainy", "cloudy"];
+      const randomWeather = weatherTypes[Math.floor(Math.random() * weatherTypes.length)];
+      setWeather(randomWeather);
+    };
+
+    // Change weather every 60 seconds
+    const interval = setInterval(changeWeather, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const seedPackets: SeedPacket[] = [
     {
@@ -340,6 +367,30 @@ function App() {
           setMoney(money - draggedSeed.price);
           playSound("/Audio/placingPlant.mp3");
 
+          // Create dirt particles when planting
+          const particleCount = 5;
+          const newTrails: TrailParticle[] = [];
+          for (let i = 0; i < particleCount; i++) {
+            const angle = (Math.PI * 2 * i) / particleCount;
+            const distance = 20 + Math.random() * 20;
+            const offsetX = Math.cos(angle) * distance;
+            const offsetY = Math.sin(angle) * distance;
+            const trailId = `plant-${Date.now()}-${i}`;
+            const size = Math.floor(Math.random() * 3) + 3;
+
+            newTrails.push({
+              id: trailId,
+              x: cursorPosition.x + offsetX,
+              y: cursorPosition.y + offsetY,
+              size: size,
+            });
+
+            setTimeout(() => {
+              setTrailParticles((prev) => prev.filter((t) => t.id !== trailId));
+            }, 500);
+          }
+          setTrailParticles((prev) => [...prev, ...newTrails]);
+
           // Trigger settle animation
           setNewlyPlacedSproutId(newSproutId);
           setTimeout(() => setNewlyPlacedSproutId(null), 400);
@@ -362,12 +413,64 @@ function App() {
           } else if (draggedTool.type === "Fertilizer") {
             // Apply fertilizer to the plant
             playSound("/Audio/fertilizerUse.mp3");
-            // TODO: Add fertilizer effect to the sprout
+
+            // Create golden sparkle particles for fertilizer
+            const sprout = placedSprouts.find((s) => s.id === hoveredSproutId);
+            if (sprout) {
+              const particleCount = 8;
+              const newParticles: ToolParticle[] = [];
+              for (let i = 0; i < particleCount; i++) {
+                const angle = (Math.PI * 2 * i) / particleCount + Math.random() * 0.5;
+                const speed = 1 + Math.random() * 2;
+                const particleId = `fertilizer-${Date.now()}-${i}`;
+
+                newParticles.push({
+                  id: particleId,
+                  x: sprout.x,
+                  y: sprout.y,
+                  size: Math.floor(Math.random() * 4) + 4,
+                  color: "#FFD700", // Gold
+                  velocityX: Math.cos(angle) * speed,
+                  velocityY: Math.sin(angle) * speed - 2, // Rising upward
+                });
+
+                setTimeout(() => {
+                  setToolParticles((prev) => prev.filter((p) => p.id !== particleId));
+                }, 800);
+              }
+              setToolParticles((prev) => [...prev, ...newParticles]);
+            }
             setHoveredSproutId(null);
           } else if (draggedTool.type === "WateringCan") {
             // Apply water to the plant
-            playSound("/Audio/wateringcan.mp3");
-            // TODO: Add watering effect to the sprout
+            playSound("/Audio/wateringcanuse.mp3");
+
+            // Create blue water droplet particles
+            const sprout = placedSprouts.find((s) => s.id === hoveredSproutId);
+            if (sprout) {
+              const particleCount = 15; // More particles
+              const newParticles: ToolParticle[] = [];
+              for (let i = 0; i < particleCount; i++) {
+                const angle = Math.random() * Math.PI - Math.PI / 2; // Spray downward
+                const speed = 2 + Math.random() * 3;
+                const particleId = `water-${Date.now()}-${i}`;
+
+                newParticles.push({
+                  id: particleId,
+                  x: sprout.x,
+                  y: sprout.y - 30, // Start above the plant
+                  size: Math.floor(Math.random() * 5) + 5, // Bigger: 5-10px
+                  color: "#4A9EFF", // Blue
+                  velocityX: Math.cos(angle) * speed,
+                  velocityY: Math.sin(angle) * speed + 3, // Falling downward
+                });
+
+                setTimeout(() => {
+                  setToolParticles((prev) => prev.filter((p) => p.id !== particleId));
+                }, 800); // Last longer
+              }
+              setToolParticles((prev) => [...prev, ...newParticles]);
+            }
             setHoveredSproutId(null);
           }
         } else {
@@ -468,6 +571,30 @@ function App() {
           )
         );
 
+        // Create dirt particles when replanting
+        const particleCount = 5;
+        const newTrails: TrailParticle[] = [];
+        for (let i = 0; i < particleCount; i++) {
+          const angle = (Math.PI * 2 * i) / particleCount;
+          const distance = 20 + Math.random() * 20;
+          const offsetX = Math.cos(angle) * distance;
+          const offsetY = Math.sin(angle) * distance;
+          const trailId = `replant-${Date.now()}-${i}`;
+          const size = Math.floor(Math.random() * 3) + 3;
+
+          newTrails.push({
+            id: trailId,
+            x: e.clientX + offsetX,
+            y: e.clientY + offsetY,
+            size: size,
+          });
+
+          setTimeout(() => {
+            setTrailParticles((prev) => prev.filter((t) => t.id !== trailId));
+          }, 500);
+        }
+        setTrailParticles((prev) => [...prev, ...newTrails]);
+
         // Trigger settle animation for replanted sprout
         setNewlyPlacedSproutId(attachedSproutId);
         setTimeout(() => setNewlyPlacedSproutId(null), 400);
@@ -482,10 +609,23 @@ function App() {
     }
   };
 
+  const getWeatherIcon = () => {
+    switch (weather) {
+      case "sunny":
+        return "/Sprites/UI/sunlogo.png";
+      case "rainy":
+        return "/Sprites/UI/rainlogo.png";
+      case "cloudy":
+        return "/Sprites/UI/cloudylogo.png";
+      default:
+        return "/Sprites/UI/sunlogo.png";
+    }
+  };
+
   return (
     <>
       {/* Weather effects - Rain */}
-      {isRaining && <Rain rainDrops={rainDrops} />}
+      {weather === "rainy" && <Rain rainDrops={rainDrops} />}
 
       <main
         className="h-screen w-full flex justify-center relative"
@@ -499,6 +639,17 @@ function App() {
         onMouseUp={handleGlobalMouseUp}
         onClick={handleClick}
       >
+      {/* Sunny weather tint overlay */}
+      {weather === "sunny" && (
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundColor: "rgba(255, 223, 128, 0.2)",
+            mixBlendMode: "multiply",
+            zIndex: 0,
+          }}
+        />
+      )}
 
       {/* Render placed sprouts */}
       {placedSprouts.map((sprout) => {
@@ -616,6 +767,27 @@ function App() {
         );
       })}
 
+      {/* Tool particles (water/fertilizer) */}
+      {toolParticles.map((particle) => {
+        const duration = particle.color === "#FFD700" ? 0.8 : 0.6; // Gold slower, water faster
+        return (
+          <div
+            key={particle.id}
+            className="pointer-events-none absolute rounded-full"
+            style={{
+              left: particle.x,
+              top: particle.y,
+              width: `${particle.size}px`,
+              height: `${particle.size}px`,
+              backgroundColor: particle.color,
+              animation: `toolParticleFloat ${duration}s ease-out forwards`,
+              "--particle-x": `${particle.velocityX * 30}px`,
+              "--particle-y": `${particle.velocityY * 30}px`,
+            } as React.CSSProperties}
+          />
+        );
+      })}
+
       {/* Coin particles */}
       {coinParticles.map((coin) => {
         // Calculate target position (money display is in top right)
@@ -646,21 +818,29 @@ function App() {
 
       <div className="h-full w-full flex flex-col justify-between">
         <div className="flex flex-row justify-between h-fit w-full p-8">
-          <div className="relative w-fit h-fit">
-            <img
-              src="/Sprites/UI/PacketUI.png"
-              className="image-pixelated w-[300px] h-auto"
-              alt="packet ui"
-              draggable={false}
-            />
-            <ol className="absolute inset-0 flex flex-row justify-between items-center gap-3 px-10">
+          <div className="flex flex-row gap-4 items-center">
+            <div className="relative w-fit h-fit">
+              <img
+                src="/Sprites/UI/PacketUI.png"
+                className="image-pixelated w-[300px] h-auto"
+                alt="packet ui"
+                draggable={false}
+              />
+              <ol className="absolute inset-0 flex flex-row justify-between items-center gap-3 px-10">
               {seedPackets.map((seed) => {
                 const canAfford = money >= seed.price;
+                const isHovered = hoveredPacketId === seed.id;
                 return (
                   <li
                     key={seed.id}
                     onMouseDown={canAfford ? handleSeedMouseDown(seed) : () => playSound("/Audio/error.mp3")}
-                    onMouseEnter={() => canAfford && playSound("/Audio/interact.mp3")}
+                    onMouseEnter={() => {
+                      if (canAfford) {
+                        playSound("/Audio/interact.mp3");
+                        setHoveredPacketId(seed.id);
+                      }
+                    }}
+                    onMouseLeave={() => setHoveredPacketId(null)}
                     className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all ${
                       draggedSeed?.id === seed.id
                         ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95"
@@ -678,6 +858,121 @@ function App() {
                       alt={`${seed.type} packet`}
                       draggable={false}
                     />
+                    {/* Show berry dots when hovering over berry packet */}
+                    {seed.id === "berry" && isHovered && (
+                      <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
+                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-50%" }}>
+                          <img
+                            src="/Sprites/Berry/BerryBlue.png"
+                            className="w-12 h-12 image-pixelated object-cover"
+                            alt="berry blue"
+                            draggable={false}
+                            style={{ width: "48px", height: "48px" }}
+                          />
+                          <div className="text-xs text-white font-bold whitespace-nowrap">79%</div>
+                        </div>
+                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "50%", transform: "translateX(-50%)" }}>
+                          <img
+                            src="/Sprites/Berry/BerryStraw.png"
+                            className="w-12 h-12 image-pixelated object-cover"
+                            alt="berry straw"
+                            draggable={false}
+                            style={{ width: "48px", height: "48px" }}
+                          />
+                          <div className="text-xs text-white font-bold whitespace-nowrap">20%</div>
+                        </div>
+                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", right: "-50%" }}>
+                          <img
+                            src="/Sprites/Berry/BerryAncient.png"
+                            className="w-12 h-12 image-pixelated object-cover"
+                            alt="berry ancient"
+                            draggable={false}
+                            style={{ width: "48px", height: "48px" }}
+                          />
+                          <div className="text-xs text-white font-bold whitespace-nowrap">1%</div>
+                        </div>
+                      </div>
+                    )}
+                    {/* Show mushroom variants when hovering over fungi packet */}
+                    {seed.id === "fungi" && isHovered && (
+                      <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
+                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-50%" }}>
+                          <img
+                            src="/Sprites/Mushrooms/BrownMushroom.png"
+                            className="w-12 h-12 image-pixelated object-cover"
+                            alt="brown mushroom"
+                            draggable={false}
+                            style={{ width: "48px", height: "48px" }}
+                          />
+                          <div className="text-xs text-white font-bold whitespace-nowrap">79%</div>
+                        </div>
+                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "50%", transform: "translateX(-50%)" }}>
+                          <img
+                            src="/Sprites/Mushrooms/RedMushroom.png"
+                            className="w-12 h-12 image-pixelated object-cover"
+                            alt="red mushroom"
+                            draggable={false}
+                            style={{ width: "48px", height: "48px" }}
+                          />
+                          <div className="text-xs text-white font-bold whitespace-nowrap">20%</div>
+                        </div>
+                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", right: "-50%" }}>
+                          <img
+                            src="/Sprites/Mushrooms/MarioMushroom.png"
+                            className="w-12 h-12 image-pixelated object-cover"
+                            alt="mario mushroom"
+                            draggable={false}
+                            style={{ width: "48px", height: "48px" }}
+                          />
+                          <div className="text-xs text-white font-bold whitespace-nowrap">1%</div>
+                        </div>
+                      </div>
+                    )}
+                    {/* Show rose variants when hovering over rose packet */}
+                    {seed.id === "rose" && isHovered && (
+                      <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
+                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-90%" }}>
+                          <img
+                            src="/Sprites/Roses/RedRoseNew.png"
+                            className="w-12 h-12 image-pixelated object-cover"
+                            alt="red rose"
+                            draggable={false}
+                            style={{ width: "48px", height: "48px" }}
+                          />
+                          <div className="text-xs text-white font-bold whitespace-nowrap">79%</div>
+                        </div>
+                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-30%" }}>
+                          <img
+                            src="/Sprites/Roses/PinkRoseNew.png"
+                            className="w-12 h-12 image-pixelated object-cover"
+                            alt="pink rose"
+                            draggable={false}
+                            style={{ width: "48px", height: "48px" }}
+                          />
+                          <div className="text-xs text-white font-bold whitespace-nowrap">20%</div>
+                        </div>
+                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "30%" }}>
+                          <img
+                            src="/Sprites/Roses/WhiteRoseNew.png"
+                            className="w-12 h-12 image-pixelated object-cover"
+                            alt="white rose"
+                            draggable={false}
+                            style={{ width: "48px", height: "48px" }}
+                          />
+                          <div className="text-xs text-white font-bold whitespace-nowrap">20%</div>
+                        </div>
+                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "110%" }}>
+                          <img
+                            src="/Sprites/Roses/WitherRoseNew.png"
+                            className="w-12 h-12 image-pixelated object-cover"
+                            alt="wither rose"
+                            draggable={false}
+                            style={{ width: "48px", height: "48px" }}
+                          />
+                          <div className="text-xs text-white font-bold whitespace-nowrap">1%</div>
+                        </div>
+                      </div>
+                    )}
                     <div className={`text-xs pointer-events-none ${!canAfford ? "text-red-600" : ""}`}>
                       ${seed.price}
                     </div>
@@ -686,6 +981,14 @@ function App() {
               })}
             </ol>
           </div>
+          {/* Weather Icon Display */}
+          <img
+            src={getWeatherIcon()}
+            alt={`${weather} weather`}
+            className="image-pixelated w-12 h-12 object-contain"
+            draggable={false}
+          />
+        </div>
           <div className="flex justify-center">
             <div className="text-5xl text-white font-bold">${money}</div>
           </div>
