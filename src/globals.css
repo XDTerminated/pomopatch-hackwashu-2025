@@ -79,3 +79,14 @@ body {
     transform: rotate(2deg);
   }
 }
+
+@keyframes rainFall {
+  0% {
+    top: -10%;
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0.8;
+  }
+}

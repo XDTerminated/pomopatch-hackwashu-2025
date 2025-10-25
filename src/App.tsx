@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./globals.css";
 
@@ -41,6 +41,35 @@ interface TrailParticle {
   size: number;
 }
 
+interface RainDrop {
+  id: string;
+  x: number;
+  delay: number;
+}
+
+// Memoized Rain component to prevent re-renders on mouse move
+const Rain = memo(({ rainDrops }: { rainDrops: RainDrop[] }) => {
+  return (
+    <>
+      {rainDrops.map((drop) => (
+        <div
+          key={drop.id}
+          className="pointer-events-none fixed"
+          style={{
+            left: `${drop.x}%`,
+            width: "2px",
+            height: "20px",
+            background: "linear-gradient(to bottom, rgba(174, 194, 224, 0.8), rgba(174, 194, 224, 0))",
+            animation: `rainFall ${1.5 + Math.random() * 0.5}s linear infinite`,
+            animationDelay: `${drop.delay}s`,
+            zIndex: 10001,
+          }}
+        />
+      ))}
+    </>
+  );
+});
+
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
@@ -64,6 +93,8 @@ function App() {
   );
   const [lastCursorPosition, setLastCursorPosition] = useState({ x: 0, y: 0 });
   const [wobbleAudio, setWobbleAudio] = useState<HTMLAudioElement | null>(null);
+  const [rainDrops, setRainDrops] = useState<RainDrop[]>([]);
+  const [isRaining, setIsRaining] = useState(true);
 
   // Function to play sounds
   const playSound = (soundPath: string) => {
@@ -81,7 +112,7 @@ function App() {
     if (attachedSproutId) {
       // Create and play wobble sound on loop
       const audio = new Audio("/Audio/wobble.mp3");
-      audio.volume = 0.01;
+      audio.volume = 0.02;
       audio.loop = true;
       audio
         .play()
@@ -96,6 +127,23 @@ function App() {
       };
     }
   }, [attachedSproutId]);
+
+  // Generate rain drops
+  useEffect(() => {
+    if (isRaining) {
+      const drops: RainDrop[] = [];
+      for (let i = 0; i < 50; i++) {
+        drops.push({
+          id: `rain-${i}`,
+          x: Math.random() * 100, // percentage
+          delay: Math.random() * 2 - 2, // Negative delay to start mid-animation
+        });
+      }
+      setRainDrops(drops);
+    } else {
+      setRainDrops([]);
+    }
+  }, [isRaining]);
 
   const seedPackets: SeedPacket[] = [
     {
@@ -435,18 +483,23 @@ function App() {
   };
 
   return (
-    <main
-      className="h-screen w-full flex justify-center relative"
-      style={{
-        backgroundImage: "url('/Sprites/UI/background.png')",
-        backgroundRepeat: "repeat",
-        backgroundSize: "128px 128px",
-        imageRendering: "pixelated",
-      }}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleGlobalMouseUp}
-      onClick={handleClick}
-    >
+    <>
+      {/* Weather effects - Rain */}
+      {isRaining && <Rain rainDrops={rainDrops} />}
+
+      <main
+        className="h-screen w-full flex justify-center relative"
+        style={{
+          backgroundImage: "url('/Sprites/UI/background.png')",
+          backgroundRepeat: "repeat",
+          backgroundSize: "128px 128px",
+          imageRendering: "pixelated",
+        }}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleGlobalMouseUp}
+        onClick={handleClick}
+      >
+
       {/* Render placed sprouts */}
       {placedSprouts.map((sprout) => {
         const isAttached = attachedSproutId === sprout.id;
@@ -464,6 +517,7 @@ function App() {
             src="/Sprites/basicSprout.png"
             alt={`${sprout.seedType} sprout`}
             className="image-pixelated pointer-events-none absolute w-24 h-24 object-contain"
+            draggable={false}
             style={{
               left: isAttached ? cursorPosition.x - 48 : sprout.x - 48,
               top: isAttached ? cursorPosition.y - 48 : sprout.y - 48,
@@ -511,6 +565,7 @@ function App() {
                 src="/Sprites/basicSprout.png"
                 alt="sprout preview"
                 className="w-full h-full object-contain"
+                draggable={false}
               />
             </div>
           );
@@ -527,6 +582,7 @@ function App() {
               src={draggedTool.image}
               alt="tool preview"
               className="image-pixelated pointer-events-none absolute h-12 w-auto object-contain"
+              draggable={false}
               style={{
                 left: dragPosition.x - 24,
                 top: dragPosition.y - 24,
@@ -572,6 +628,7 @@ function App() {
             src="/Sprites/coin.png"
             alt="coin"
             className="image-pixelated pointer-events-none absolute w-8 h-8 object-contain animate-coin-fly"
+            draggable={false}
             style={
               {
                 left: coin.startX,
@@ -594,6 +651,7 @@ function App() {
               src="/Sprites/UI/PacketUI.png"
               className="image-pixelated w-[300px] h-auto"
               alt="packet ui"
+              draggable={false}
             />
             <ol className="absolute inset-0 flex flex-row justify-between items-center gap-3 px-10">
               {seedPackets.map((seed) => {
@@ -601,7 +659,7 @@ function App() {
                 return (
                   <li
                     key={seed.id}
-                    onMouseDown={canAfford ? handleSeedMouseDown(seed) : undefined}
+                    onMouseDown={canAfford ? handleSeedMouseDown(seed) : () => playSound("/Audio/error.mp3")}
                     onMouseEnter={() => canAfford && playSound("/Audio/interact.mp3")}
                     className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all ${
                       draggedSeed?.id === seed.id
@@ -618,6 +676,7 @@ function App() {
                       src={seed.image}
                       className="w-fit h-full image-pixelated object-contain pointer-events-none"
                       alt={`${seed.type} packet`}
+                      draggable={false}
                     />
                     <div className={`text-xs pointer-events-none ${!canAfford ? "text-red-600" : ""}`}>
                       ${seed.price}
@@ -650,6 +709,7 @@ function App() {
                       src="/Sprites/UI/SpadeUI.png"
                       className="image-pixelated w-[100px] h-auto"
                       alt="tool ui background"
+                      draggable={false}
                     />
                     <div
                       onMouseDown={
@@ -684,6 +744,7 @@ function App() {
                       <img
                         src={displayImage}
                         className="h-12 w-auto image-pixelated object-contain pointer-events-none"
+                        draggable={false}
                         alt={
                           showDollarSign ? "Sell sprout" : `${tool.type} tool`
                         }
@@ -703,6 +764,7 @@ function App() {
         </div>
       </div>
     </main>
+    </>
   );
 }
 
