@@ -112,6 +112,8 @@ function App() {
   const [toolParticles, setToolParticles] = useState<ToolParticle[]>([]);
   const [hoveredPacketId, setHoveredPacketId] = useState<string | null>(null);
   const [customCursorPosition, setCustomCursorPosition] = useState({ x: 0, y: 0 });
+  const [isHoveringWeather, setIsHoveringWeather] = useState(false);
+  const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
 
   // Function to play sounds
   const playSound = (soundPath: string) => {
@@ -162,18 +164,24 @@ function App() {
     }
   }, [weather]);
 
-  // Change weather randomly every 60 seconds (simulating timer cycles)
+  // Change weather randomly at random intervals
   useEffect(() => {
-    const changeWeather = () => {
+    const scheduleNextWeatherChange = () => {
       const weatherTypes: WeatherType[] = ["sunny", "rainy", "cloudy"];
       const randomWeather = weatherTypes[Math.floor(Math.random() * weatherTypes.length)];
-      setWeather(randomWeather);
+      const randomInterval = Math.random() * 40000 + 20000; // Random between 20-60 seconds
+
+      const timeout = setTimeout(() => {
+        setWeather(randomWeather);
+        scheduleNextWeatherChange(); // Schedule the next change
+      }, randomInterval);
+
+      return timeout;
     };
 
-    // Change weather every 60 seconds
-    const interval = setInterval(changeWeather, 60000);
+    const timeout = scheduleNextWeatherChange();
 
-    return () => clearInterval(interval);
+    return () => clearTimeout(timeout);
   }, []);
 
   const seedPackets: SeedPacket[] = [
@@ -627,6 +635,19 @@ function App() {
     }
   };
 
+  const getWeatherDescription = () => {
+    switch (weather) {
+      case "sunny":
+        return "Plants give 1.5x more coins";
+      case "rainy":
+        return "Plants grow 1.5x faster";
+      case "cloudy":
+        return "No effects happen";
+      default:
+        return "";
+    }
+  };
+
   return (
     <>
       {/* Custom Cursor */}
@@ -660,29 +681,21 @@ function App() {
         onMouseUp={handleGlobalMouseUp}
         onClick={handleClick}
       >
-      {/* Sunny weather tint overlay */}
-      {weather === "sunny" && (
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundColor: "rgba(255, 230, 100, 0.35)",
-            mixBlendMode: "multiply",
-            zIndex: 0,
-          }}
-        />
-      )}
-
-      {/* Rainy weather tint overlay */}
-      {weather === "rainy" && (
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundColor: "rgba(100, 120, 140, 0.4)",
-            mixBlendMode: "multiply",
-            zIndex: 0,
-          }}
-        />
-      )}
+      {/* Weather tint overlay - always present with smooth transitions */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundColor:
+            weather === "sunny"
+              ? "rgba(255, 230, 100, 0.35)"
+              : weather === "rainy"
+              ? "rgba(100, 120, 140, 0.4)"
+              : "rgba(255, 255, 255, 0)", // Cloudy = no tint
+          mixBlendMode: "multiply",
+          zIndex: 0,
+          transition: "background-color 2s ease-in-out",
+        }}
+      />
 
       {/* Render placed sprouts */}
       {placedSprouts.map((sprout) => {
@@ -1015,7 +1028,11 @@ function App() {
             </ol>
           </div>
           {/* Weather Icon Display */}
-          <div className="flex flex-col items-center gap-1">
+          <div
+            className="flex flex-col items-center gap-1 relative"
+            onMouseEnter={() => setIsHoveringWeather(true)}
+            onMouseLeave={() => setIsHoveringWeather(false)}
+          >
             <img
               src={getWeatherIcon()}
               alt={`${weather} weather`}
@@ -1023,6 +1040,22 @@ function App() {
               draggable={false}
             />
             <div className="text-xs text-white font-bold capitalize">{weather}</div>
+
+            {/* Weather effect description on hover */}
+            {isHoveringWeather && (
+              <div
+                className="absolute top-full mt-2 text-xs px-3 py-2 whitespace-nowrap z-50 font-bold"
+                style={{
+                  backgroundColor: "#D4A574",
+                  border: "3px solid #8B4513",
+                  color: "#3D2817",
+                  boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                  imageRendering: "pixelated",
+                }}
+              >
+                {getWeatherDescription()}
+              </div>
+            )}
           </div>
         </div>
           <div className="flex justify-center">
@@ -1061,10 +1094,12 @@ function App() {
                           setIsHoveringDollarSign(true);
                         } else if (!attachedSproutId) {
                           playSound("/Audio/interact.mp3");
+                          setHoveredToolId(tool.id);
                         }
                       }}
                       onMouseLeave={() => {
                         if (showDollarSign) setIsHoveringDollarSign(false);
+                        setHoveredToolId(null);
                       }}
                       className={`absolute inset-0 flex justify-center items-center active:scale-95 transition-all ${
                         attachedSproutId && !showDollarSign
@@ -1093,6 +1128,24 @@ function App() {
                   {tool.price && !showDollarSign && (
                     <div className="text-base text-white font-bold">
                       ${tool.price}
+                    </div>
+                  )}
+
+                  {/* Tool tooltip */}
+                  {hoveredToolId === tool.id && !showDollarSign && !attachedSproutId && (
+                    <div
+                      className="absolute bottom-full mb-2 text-xs px-3 py-2 whitespace-nowrap z-50 font-bold"
+                      style={{
+                        backgroundColor: "#D4A574",
+                        border: "3px solid #8B4513",
+                        color: "#3D2817",
+                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                        imageRendering: "pixelated",
+                      }}
+                    >
+                      {tool.type === "Spade" && "Move and sell plants"}
+                      {tool.type === "WateringCan" && "Turn seedlings into sprouts"}
+                      {tool.type === "Fertilizer" && "Turn sprouts into plants"}
                     </div>
                   )}
                 </div>
