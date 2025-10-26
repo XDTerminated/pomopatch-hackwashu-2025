@@ -37,7 +37,7 @@ interface AppProps {
     initialPlantLimit?: number;
     initialPlants?: Plant[];
     userEmail: string;
-    authToken: string;
+    getAuthToken: () => Promise<string | null>;
 }
 
 interface CoinParticle {
@@ -100,7 +100,7 @@ const Rain = memo(({ rainDrops }: { rainDrops: RainDrop[] }) => {
     );
 });
 
-function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], userEmail, authToken }: AppProps) {
+function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], userEmail, getAuthToken }: AppProps) {
     const [greetMsg, setGreetMsg] = useState("");
     const [name, setName] = useState("");
     const [draggedSeed, setDraggedSeed] = useState<SeedPacket | null>(null);
@@ -153,7 +153,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
     // Function to play sounds
     const playSound = (soundPath: string) => {
         const audio = new Audio(soundPath);
-        audio.volume = 0.5;
+        audio.volume = 1.0;
         audio.play().catch((error) => console.error("Audio play failed:", error, "Path:", soundPath));
     };
 
@@ -161,7 +161,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
     useEffect(() => {
         if (attachedSproutId) {
             const audio = new Audio("/Audio/wobble.mp3");
-            audio.volume = 0.02;
+            audio.volume = 1.0;
             audio.loop = true;
             audio.play().catch((error) => console.error("Wobble audio play failed:", error));
             setWobbleAudio(audio);
@@ -176,211 +176,221 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
 
     // Handle rain audio with fade in/out
     useEffect(() => {
-        let audio: HTMLAudioElement | null = null;
-        let fadeOutInterval: ReturnType<typeof setInterval> | null = null;
+        console.log("Rain effect triggered. Current weather:", weather);
+        if (weather !== "rainy") {
+            console.log("Weather is not rainy, skipping rain audio");
+            return;
+        }
 
-        if (weather === "rainy") {
-            console.log("Starting rain audio...");
-            audio = new Audio("/Audio/rain.mp3");
-            audio.loop = true;
-            audio.volume = 0;
+        console.log("Starting rain audio...");
+        const audio = new Audio("/Audio/rain.mp3");
+        audio.loop = true;
+        audio.volume = 0;
 
-            const playPromise = audio.play();
+        const playPromise = audio.play();
 
-            if (playPromise !== undefined) {
-                playPromise
-                    .then(() => {
-                        console.log("Rain audio started successfully");
-                        let fadeInInterval = setInterval(() => {
-                            if (audio && audio.volume < 0.03) {
-                                audio.volume = Math.min(audio.volume + 0.003, 0.03);
-                            } else {
-                                clearInterval(fadeInInterval);
-                            }
-                        }, 100);
-                    })
-                    .catch((error) => {
-                        console.error("Rain audio play failed:", error);
-                        const enableAudio = () => {
-                            if (audio) {
-                                audio
-                                    .play()
-                                    .then(() => {
-                                        console.log("Rain audio started after user interaction");
-                                        let fadeInInterval = setInterval(() => {
-                                            if (audio && audio.volume < 0.03) {
-                                                audio.volume = Math.min(audio.volume + 0.003, 0.03);
-                                            } else {
-                                                clearInterval(fadeInInterval);
-                                            }
-                                        }, 100);
-                                        document.removeEventListener("click", enableAudio);
-                                    })
-                                    .catch((e) => console.error("Still failed:", e));
-                            }
-                        };
-                        document.addEventListener("click", enableAudio, { once: true });
-                    });
-            }
+        if (playPromise !== undefined) {
+            playPromise
+                .then(() => {
+                    console.log("Rain audio started successfully");
+                    // Fade in to 0.25 volume (half as loud)
+                    let fadeInInterval = setInterval(() => {
+                        if (audio.volume < 0.25) {
+                            audio.volume = Math.min(audio.volume + 0.025, 0.25);
+                        } else {
+                            clearInterval(fadeInInterval);
+                        }
+                    }, 50);
+                })
+                .catch((error) => {
+                    console.error("Rain audio play failed:", error);
+                    const enableAudio = () => {
+                        audio
+                            .play()
+                            .then(() => {
+                                console.log("Rain audio started after user interaction");
+                                // Fade in to 0.25 volume (half as loud)
+                                let fadeInInterval = setInterval(() => {
+                                    if (audio.volume < 0.25) {
+                                        audio.volume = Math.min(audio.volume + 0.025, 0.25);
+                                    } else {
+                                        clearInterval(fadeInInterval);
+                                    }
+                                }, 50);
+                                document.removeEventListener("click", enableAudio);
+                            })
+                            .catch((e) => console.error("Still failed:", e));
+                    };
+                    document.addEventListener("click", enableAudio, { once: true });
+                });
         }
 
         return () => {
-            if (audio) {
-                console.log("Stopping rain audio...");
-                fadeOutInterval = setInterval(() => {
-                    if (audio && audio.volume > 0.01) {
-                        audio.volume = Math.max(audio.volume - 0.01, 0);
-                    } else {
-                        if (audio) {
-                            audio.pause();
-                            audio.currentTime = 0;
-                        }
-                        if (fadeOutInterval) {
-                            clearInterval(fadeOutInterval);
-                        }
-                    }
-                }, 50);
-            }
+            console.log("Stopping rain audio...");
+            // Fade out
+            const fadeOutInterval = setInterval(() => {
+                if (audio.volume > 0.05) {
+                    audio.volume = Math.max(audio.volume - 0.05, 0);
+                } else {
+                    audio.pause();
+                    audio.currentTime = 0;
+                    clearInterval(fadeOutInterval);
+                }
+            }, 50);
         };
     }, [weather]);
 
     // Handle birds audio during sunny weather
     useEffect(() => {
-        if (weather === "sunny") {
-            console.log("Starting birds audio...");
-            const audio = new Audio("/Audio/birds.mp3");
-            audio.loop = true;
-            audio.volume = 0;
-
-            const playPromise = audio.play();
-
-            if (playPromise !== undefined) {
-                playPromise
-                    .then(() => {
-                        console.log("Birds audio started successfully");
-                        let fadeInInterval = setInterval(() => {
-                            if (audio.volume < 0.15) {
-                                audio.volume = Math.min(audio.volume + 0.01, 0.15);
-                            } else {
-                                clearInterval(fadeInInterval);
-                            }
-                        }, 100);
-                    })
-                    .catch((error) => {
-                        console.error("Birds audio play failed:", error);
-                        const enableAudio = () => {
-                            audio
-                                .play()
-                                .then(() => {
-                                    console.log("Birds audio started after user interaction");
-                                    let fadeInInterval = setInterval(() => {
-                                        if (audio.volume < 0.15) {
-                                            audio.volume = Math.min(audio.volume + 0.01, 0.15);
-                                        } else {
-                                            clearInterval(fadeInInterval);
-                                        }
-                                    }, 100);
-                                    document.removeEventListener("click", enableAudio);
-                                })
-                                .catch((e) => console.error("Still failed:", e));
-                        };
-                        document.addEventListener("click", enableAudio, { once: true });
-                    });
-            }
-
-            return () => {
-                console.log("Stopping birds audio...");
-                const fadeOutInterval = setInterval(() => {
-                    if (audio.volume > 0.01) {
-                        audio.volume = Math.max(audio.volume - 0.01, 0);
-                    } else {
-                        audio.pause();
-                        audio.currentTime = 0;
-                        clearInterval(fadeOutInterval);
-                    }
-                }, 50);
-            };
+        console.log("Birds effect triggered. Current weather:", weather);
+        if (weather !== "sunny") {
+            console.log("Weather is not sunny, skipping birds audio");
+            return;
         }
+
+        console.log("Starting birds audio...");
+        const audio = new Audio("/Audio/birds.mp3");
+        audio.loop = true;
+        audio.volume = 0;
+
+        const playPromise = audio.play();
+
+        if (playPromise !== undefined) {
+            playPromise
+                .then(() => {
+                    console.log("Birds audio started successfully");
+                    // Fade in to 1.0 volume
+                    let fadeInInterval = setInterval(() => {
+                        if (audio.volume < 1.0) {
+                            audio.volume = Math.min(audio.volume + 0.05, 1.0);
+                        } else {
+                            clearInterval(fadeInInterval);
+                        }
+                    }, 50);
+                })
+                .catch((error) => {
+                    console.error("Birds audio play failed:", error);
+                    const enableAudio = () => {
+                        audio
+                            .play()
+                            .then(() => {
+                                console.log("Birds audio started after user interaction");
+                                // Fade in to 1.0 volume
+                                let fadeInInterval = setInterval(() => {
+                                    if (audio.volume < 1.0) {
+                                        audio.volume = Math.min(audio.volume + 0.05, 1.0);
+                                    } else {
+                                        clearInterval(fadeInInterval);
+                                    }
+                                }, 50);
+                                document.removeEventListener("click", enableAudio);
+                            })
+                            .catch((e) => console.error("Still failed:", e));
+                    };
+                    document.addEventListener("click", enableAudio, { once: true });
+                });
+        }
+
+        return () => {
+            console.log("Stopping birds audio...");
+            // Fade out
+            const fadeOutInterval = setInterval(() => {
+                if (audio.volume > 0.05) {
+                    audio.volume = Math.max(audio.volume - 0.05, 0);
+                } else {
+                    audio.pause();
+                    audio.currentTime = 0;
+                    clearInterval(fadeOutInterval);
+                }
+            }, 50);
+        };
     }, [weather]);
 
     // Handle wind audio randomly during cloudy weather
     useEffect(() => {
-        if (weather === "cloudy") {
-            let timeoutId: ReturnType<typeof setTimeout>;
-            let currentAudio: HTMLAudioElement | null = null;
-            let isCleanedUp = false;
-
-            const playWind = () => {
-                if (isCleanedUp) return;
-
-                console.log("Playing wind audio...");
-                const audio = new Audio("/Audio/wind.mp3");
-                audio.volume = 0;
-                currentAudio = audio;
-
-                audio
-                    .play()
-                    .then(() => {
-                        console.log("Wind audio started successfully");
-                        let fadeInInterval = setInterval(() => {
-                            if (audio.volume < 0.5) {
-                                audio.volume = Math.min(audio.volume + 0.03, 0.5);
-                            } else {
-                                clearInterval(fadeInInterval);
-                            }
-                        }, 100);
-
-                        audio.addEventListener("timeupdate", () => {
-                            if (audio.duration - audio.currentTime < 2) {
-                                if (audio.volume > 0.01) {
-                                    audio.volume = Math.max(audio.volume - 0.02, 0);
-                                }
-                            }
-                        });
-
-                        audio.addEventListener("ended", () => {
-                            currentAudio = null;
-                            if (!isCleanedUp) {
-                                const nextWind = Math.random() * 10000 + 5000;
-                                timeoutId = setTimeout(playWind, nextWind);
-                            }
-                        });
-                    })
-                    .catch((error) => {
-                        console.error("Wind audio play failed:", error);
-                        const enableAudio = () => {
-                            audio
-                                .play()
-                                .then(() => {
-                                    console.log("Wind audio started after user interaction");
-                                    let fadeInInterval = setInterval(() => {
-                                        if (audio.volume < 0.5) {
-                                            audio.volume = Math.min(audio.volume + 0.03, 0.5);
-                                        } else {
-                                            clearInterval(fadeInInterval);
-                                        }
-                                    }, 100);
-                                    document.removeEventListener("click", enableAudio);
-                                })
-                                .catch((e) => console.error("Wind still failed:", e));
-                        };
-                        document.addEventListener("click", enableAudio, { once: true });
-                    });
-            };
-
-            timeoutId = setTimeout(playWind, Math.random() * 5000 + 2000);
-
-            return () => {
-                console.log("Stopping wind audio...");
-                isCleanedUp = true;
-                clearTimeout(timeoutId);
-                if (currentAudio) {
-                    currentAudio.pause();
-                    currentAudio.currentTime = 0;
-                    currentAudio = null;
-                }
-            };
+        console.log("Wind effect triggered. Current weather:", weather);
+        if (weather !== "cloudy") {
+            console.log("Weather is not cloudy, skipping wind audio");
+            return;
         }
+
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        let currentAudio: HTMLAudioElement | null = null;
+        let isCleanedUp = false;
+
+        const playWind = () => {
+            if (isCleanedUp) return;
+
+            console.log("Playing wind audio...");
+            const audio = new Audio("/Audio/wind.mp3");
+            audio.volume = 0;
+            currentAudio = audio;
+
+            audio
+                .play()
+                .then(() => {
+                    console.log("Wind audio started successfully");
+                    // Fade in to 1.0 volume (max allowed)
+                    let fadeInInterval = setInterval(() => {
+                        if (audio.volume < 1.0) {
+                            audio.volume = Math.min(audio.volume + 0.05, 1.0);
+                        } else {
+                            clearInterval(fadeInInterval);
+                        }
+                    }, 50);
+
+                    audio.addEventListener("ended", () => {
+                        currentAudio = null;
+                        if (!isCleanedUp) {
+                            const nextWind = Math.random() * 10000 + 5000;
+                            timeoutId = setTimeout(playWind, nextWind);
+                        }
+                    });
+                })
+                .catch((error) => {
+                    console.error("Wind audio play failed:", error);
+                    const enableAudio = () => {
+                        audio
+                            .play()
+                            .then(() => {
+                                console.log("Wind audio started after user interaction");
+                                // Fade in to 1.0 volume (max allowed)
+                                let fadeInInterval = setInterval(() => {
+                                    if (audio.volume < 1.0) {
+                                        audio.volume = Math.min(audio.volume + 0.05, 1.0);
+                                    } else {
+                                        clearInterval(fadeInInterval);
+                                    }
+                                }, 50);
+                                document.removeEventListener("click", enableAudio);
+                            })
+                            .catch((e) => console.error("Wind still failed:", e));
+                    };
+                    document.addEventListener("click", enableAudio, { once: true });
+                });
+        };
+
+        timeoutId = setTimeout(playWind, Math.random() * 5000 + 2000);
+
+        return () => {
+            console.log("Stopping wind audio...");
+            isCleanedUp = true;
+            if (timeoutId) clearTimeout(timeoutId);
+            if (currentAudio) {
+                // Fade out
+                const fadeOutInterval = setInterval(() => {
+                    if (currentAudio && currentAudio.volume > 0.05) {
+                        currentAudio.volume = Math.max(currentAudio.volume - 0.05, 0);
+                    } else {
+                        if (currentAudio) {
+                            currentAudio.pause();
+                            currentAudio.currentTime = 0;
+                        }
+                        clearInterval(fadeOutInterval);
+                    }
+                }, 50);
+            }
+        };
     }, [weather]);
 
     // Generate rain drops when weather changes
@@ -483,21 +493,35 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
             id: "berry",
             type: "Berry",
             image: "/Sprites/UI/berryPacket.png",
-            price: 10,
+            price: 100,
         },
         {
             id: "fungi",
             type: "Fungi",
             image: "/Sprites/UI/fungiPacket.png",
-            price: 15,
+            price: 100,
         },
         {
             id: "rose",
             type: "Rose",
             image: "/Sprites/UI/rosePacket.png",
-            price: 20,
+            price: 100,
         },
     ];
+
+    // Calculate the cost for plant limit upgrade based on current limit
+    // Backend formula: base_cost * (1.1 ^ upgrade_level) where upgrade_level = (current_limit - 50) / 25
+    // Round to nearest 100 using Math.round(cost / 100) * 100
+    const calculatePlantLimitUpgradeCost = (): number => {
+        const baseLimit = 50;
+        const upgradeLevel = Math.max(0, (inventoryLimit - baseLimit) / 25);
+        const baseCost = 1000;
+        const multiplier = 1.1;
+        const rawCost = baseCost * Math.pow(multiplier, upgradeLevel);
+        return Math.round(rawCost / 100) * 100;
+    };
+
+    const plantLimitUpgradeCost = calculatePlantLimitUpgradeCost();
 
     const tools: Tool[] = [
         {
@@ -515,13 +539,13 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
             id: "fertilizer",
             type: "Fertilizer",
             image: "/Sprites/UI/fertilizer.png",
-            price: 30,
+            price: 25,
         },
         {
             id: "backpack",
             type: "Backpack",
             image: "/Sprites/UI/backpack.png",
-            price: 50,
+            price: plantLimitUpgradeCost,
         },
     ];
 
@@ -561,16 +585,18 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
         setGreetMsg(await invoke("greet", { name }));
     }
 
-    const handleSeedMouseDown = (seed: SeedPacket) => () => {
+    const handleSeedMouseDown = (seed: SeedPacket) => (e: React.MouseEvent) => {
         console.log("🌱 Mouse down on seed:", seed.type);
         setDraggedSeed(seed);
+        setDragPosition({ x: e.clientX, y: e.clientY });
         setIsDraggingOverBackground(true);
         setMouseDownTime(Date.now());
     };
 
-    const handleToolMouseDown = (tool: Tool) => () => {
+    const handleToolMouseDown = (tool: Tool) => (e: React.MouseEvent) => {
         console.log("🔧 Mouse down on tool:", tool.type);
         setDraggedTool(tool);
+        setDragPosition({ x: e.clientX, y: e.clientY });
         setMouseDownTime(Date.now());
 
         if (tool.type === "Spade") {
@@ -709,16 +735,20 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                     setNewlyPlacedSproutId(tempSproutId);
                     setTimeout(() => setNewlyPlacedSproutId(null), 400);
 
-                    apiService
-                        .createPlant(
-                            userEmail,
-                            {
-                                plant_type: draggedSeed.type.toLowerCase(),
-                                x: relativeX,
-                                y: relativeY,
-                            },
-                            authToken
-                        )
+                    // Get fresh token before API call
+                    getAuthToken()
+                        .then((token) => {
+                            if (!token) throw new Error("Failed to get auth token");
+                            return apiService.createPlant(
+                                userEmail,
+                                {
+                                    plant_type: draggedSeed.type.toLowerCase(),
+                                    x: relativeX,
+                                    y: relativeY,
+                                },
+                                token
+                            );
+                        })
                         .then((response) => {
                             const realSproutId = `plant-${response.plant_id}`;
                             setPlacedSprouts((prev) => prev.map((s) => (s.id === tempSproutId ? { ...s, id: realSproutId } : s)));
@@ -803,14 +833,20 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         }
                         setHoveredSproutId(null);
 
-                        apiService.applyFertilizer(userEmail, plantId, authToken).catch((error) => {
-                            console.error("❌ Failed to apply fertilizer:", error);
+                        // Get fresh token before API call
+                        getAuthToken().then((token) => {
+                            if (token) {
+                                apiService.applyFertilizer(userEmail, plantId, token).catch((error) => {
+                                    console.error("❌ Failed to apply fertilizer:", error);
+                                });
+                            }
                         });
                     } else if (draggedTool.type === "WateringCan") {
                         const plantIdStr = hoveredSproutId.replace("plant-", "").replace("temp-plant-", "");
                         const plantId = parseInt(plantIdStr);
                         const targetSprout = placedSprouts.find((s) => s.id === hoveredSproutId);
                         const currentStage = targetSprout?.stage ?? 0;
+                        const growthTimeRemaining = targetSprout?.growth_time_remaining;
 
                         if (isNaN(plantId) || hoveredSproutId.startsWith("temp-")) {
                             playSound("/Audio/error.mp3");
@@ -820,6 +856,13 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
 
                         if (currentStage >= 1) {
                             console.log("💧 Cannot water - plant already at stage", currentStage);
+                            playSound("/Audio/error.mp3");
+                            setHoveredSproutId(null);
+                            return;
+                        }
+
+                        if (growthTimeRemaining !== null) {
+                            console.log("💧 Cannot water - plant is still growing (time remaining:", growthTimeRemaining, ")");
                             playSound("/Audio/error.mp3");
                             setHoveredSproutId(null);
                             return;
@@ -859,8 +902,13 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         }
                         setHoveredSproutId(null);
 
-                        apiService.applyWater(userEmail, plantId, authToken).catch((error) => {
-                            console.error("❌ Failed to apply water:", error);
+                        // Get fresh token before API call
+                        getAuthToken().then((token) => {
+                            if (token) {
+                                apiService.applyWater(userEmail, plantId, token).catch((error) => {
+                                    console.error("❌ Failed to apply water:", error);
+                                });
+                            }
                         });
                     }
                 } else {
@@ -936,8 +984,12 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                     setIsHoveringDollarSign(false);
                     playSound("/Audio/sell.mp3");
 
-                    apiService
-                        .sellPlant(userEmail, plantId, authToken)
+                    // Get fresh token before API call
+                    getAuthToken()
+                        .then((token) => {
+                            if (!token) throw new Error("Failed to get auth token");
+                            return apiService.sellPlant(userEmail, plantId, token);
+                        })
                         .then((response) => {
                             console.log("💰 Sell response:", response);
                             setMoney(response.new_balance);
@@ -995,8 +1047,12 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                 playSound("/Audio/placingPlant.mp3");
 
                 if (!isNaN(plantId) && !attachedSproutId.startsWith("temp-")) {
-                    apiService
-                        .movePlant(userEmail, plantId, { x: relativeX, y: relativeY }, authToken)
+                    // Get fresh token before API call
+                    getAuthToken()
+                        .then((token) => {
+                            if (!token) throw new Error("Failed to get auth token");
+                            return apiService.movePlant(userEmail, plantId, { x: relativeX, y: relativeY }, token);
+                        })
                         .then(() => {
                             console.log("🚚 Plant moved successfully");
                         })
@@ -1249,9 +1305,10 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                     }
                                                 }}
                                                 onMouseLeave={() => setHoveredPacketId(null)}
-                                                className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all ${draggedSeed?.id === seed.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : canAfford ? "opacity-100 cursor-grab active:cursor-grabbing active:scale-95 wiggle-hover" : "opacity-30 cursor-not-allowed"}`}
+                                                className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all ${draggedSeed?.id === seed.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : canAfford ? "opacity-100 cursor-grab active:cursor-grabbing active:scale-95" : "opacity-30 cursor-not-allowed"} ${!draggedSeed && canAfford ? "wiggle-hover" : ""}`}
                                                 style={{
                                                     filter: !canAfford ? "grayscale(100%)" : "none",
+                                                    flexShrink: 0,
                                                 }}
                                             >
                                                 <img src={seed.image} className="w-fit h-full image-pixelated object-contain pointer-events-none" alt={`${seed.type} packet`} draggable={false} />
@@ -1326,11 +1383,32 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                 <li
                                                     key={tool.id}
                                                     onMouseDown={!attachedSproutId && tool.type !== "Backpack" ? handleToolMouseDown(tool) : undefined}
-                                                    onClick={() => {
+                                                    onClick={async () => {
                                                         if (tool.type === "Backpack" && money >= (tool.price || 0)) {
-                                                            setMoney(money - (tool.price || 0));
-                                                            setInventoryLimit(inventoryLimit + 5);
-                                                            playSound("/Audio/interact.mp3");
+                                                            try {
+                                                                const upgradeCost = tool.price || 0;
+                                                                // Update client side first for instant feedback
+                                                                setMoney(money - upgradeCost);
+                                                                setInventoryLimit(inventoryLimit + 25);
+                                                                playSound("/Audio/interact.mp3");
+
+                                                                // Get fresh token before API call
+                                                                const token = await getAuthToken();
+                                                                if (!token) throw new Error("Failed to get auth token");
+
+                                                                // Then sync with backend
+                                                                const result = await apiService.increasePlantLimit(userEmail || "", token);
+                                                                console.log("Plant limit upgrade result:", result);
+                                                                // Update with backend values to ensure sync
+                                                                setMoney(result.new_balance ?? result.money ?? money - upgradeCost);
+                                                                setInventoryLimit(result.new_plant_limit ?? result.plant_limit ?? inventoryLimit + 25);
+                                                            } catch (error) {
+                                                                console.error("Failed to upgrade plant limit:", error);
+                                                                // Rollback on error
+                                                                setMoney(money);
+                                                                setInventoryLimit(inventoryLimit);
+                                                                playSound("/Audio/error.mp3");
+                                                            }
                                                         } else if (tool.type === "Backpack") {
                                                             playSound("/Audio/error.mp3");
                                                         }
@@ -1344,10 +1422,11 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                     onMouseLeave={() => {
                                                         setHoveredToolId(null);
                                                     }}
-                                                    className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all relative ${tool.type === "Backpack" ? (money >= (tool.price || 0) ? "opacity-100 cursor-pointer active:scale-95 wiggle-hover" : "opacity-30 cursor-not-allowed") : draggedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : attachedSproutId ? "opacity-30 cursor-not-allowed" : "opacity-100 cursor-grab active:cursor-grabbing active:scale-95 wiggle-hover"}`}
+                                                    className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all relative ${tool.type === "Backpack" ? (money >= (tool.price || 0) ? "opacity-100 cursor-pointer active:scale-95" : "opacity-30 cursor-not-allowed") : draggedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : attachedSproutId ? "opacity-30 cursor-not-allowed" : "opacity-100 cursor-grab active:cursor-grabbing active:scale-95"} ${!draggedTool && !attachedSproutId && (tool.type === "Backpack" ? money >= (tool.price || 0) : true) ? "wiggle-hover" : ""}`}
                                                     style={{
                                                         pointerEvents: tool.type === "Backpack" ? "auto" : attachedSproutId ? "none" : "auto",
                                                         filter: tool.type === "Backpack" && money < (tool.price || 0) ? "grayscale(100%)" : "none",
+                                                        flexShrink: 0,
                                                     }}
                                                 >
                                                     <div className="h-full flex items-center justify-center">
@@ -1370,7 +1449,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                         >
                                                             {tool.type === "WateringCan" && "Turn seedlings into sprouts"}
                                                             {tool.type === "Fertilizer" && "Turn sprouts into plants"}
-                                                            {tool.type === "Backpack" && `Upgrade inventory (+5 slots)`}
+                                                            {tool.type === "Backpack" && `Max Plants Upgrade (+25 slots)`}
                                                         </div>
                                                     )}
                                                 </li>
@@ -1429,7 +1508,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                         if (showDollarSign) setIsHoveringDollarSign(false);
                                                         setHoveredToolId(null);
                                                     }}
-                                                    className={`absolute inset-0 flex justify-center items-center active:scale-95 transition-all ${attachedSproutId && !showDollarSign ? "opacity-30 cursor-not-allowed" : showDollarSign ? "opacity-100 cursor-pointer wiggle-hover" : draggedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing" : "opacity-100 cursor-grab active:cursor-grabbing wiggle-hover"}`}
+                                                    className={`absolute inset-0 flex justify-center items-center active:scale-95 transition-all ${attachedSproutId && !showDollarSign ? "opacity-30 cursor-not-allowed" : showDollarSign ? "opacity-100 cursor-pointer" : draggedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing" : "opacity-100 cursor-grab active:cursor-grabbing"} ${!draggedTool && !attachedSproutId ? "wiggle-hover" : ""} ${showDollarSign ? "wiggle-hover" : ""}`}
                                                     style={{
                                                         pointerEvents: attachedSproutId && !showDollarSign ? "none" : "auto",
                                                     }}

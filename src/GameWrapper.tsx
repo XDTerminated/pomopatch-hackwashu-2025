@@ -10,7 +10,6 @@ export default function GameWrapper() {
     const [error, setError] = useState<string | null>(null);
     const [userData, setUserData] = useState<UserData | null>(null);
     const [plants, setPlants] = useState<Plant[]>([]);
-    const [token, setToken] = useState<string>("");
 
     useEffect(() => {
         const initializeUser = async () => {
@@ -31,8 +30,6 @@ export default function GameWrapper() {
                     setIsLoading(false);
                     return;
                 }
-
-                setToken(authToken);
 
                 // Try to create the user (will return minimal data if already exists)
                 await apiService.createUser(email, authToken);
@@ -92,5 +89,5 @@ export default function GameWrapper() {
         );
     }
 
-    return <App initialMoney={userData?.money} initialPlantLimit={userData?.plant_limit} initialPlants={plants} userEmail={user?.primaryEmailAddress?.emailAddress || ""} authToken={token} />;
+    return <App initialMoney={userData?.money} initialPlantLimit={userData?.plant_limit} initialPlants={plants} userEmail={user?.primaryEmailAddress?.emailAddress || ""} getAuthToken={getToken} />;
 }
