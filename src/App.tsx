@@ -4,7 +4,7 @@ import "./globals.css";
 import { apiService, Plant } from "./api";
 
 type SeedType = "Berry" | "Fungi" | "Rose";
-type ToolType = "Spade" | "WateringCan" | "Fertilizer";
+type ToolType = "Spade" | "WateringCan" | "Fertilizer" | "Backpack";
 type WeatherType = "sunny" | "rainy" | "cloudy";
 
 interface SeedPacket {
@@ -18,7 +18,7 @@ interface Tool {
     id: string;
     type: ToolType;
     image: string;
-    price?: number; // Optional price (spade is free, others cost money)
+    price?: number;
 }
 
 interface PlacedSprout {
@@ -26,10 +26,10 @@ interface PlacedSprout {
     x: number;
     y: number;
     seedType: SeedType;
-    stage?: number; // Plant growth stage: 0, 1, or 2
-    species?: string; // Plant species (e.g., "strawberry", "red_mushroom", "red_rose")
-    rarity?: number; // Plant rarity: 0, 1, or 2
-    growth_time_remaining?: number | null; // Time remaining for growth (null = ready to harvest/fertilize)
+    stage?: number;
+    species?: string;
+    rarity?: number;
+    growth_time_remaining?: number | null;
 }
 
 interface AppProps {
@@ -59,6 +59,12 @@ interface RainDrop {
     id: string;
     x: number;
     delay: number;
+    duration: number;
+}
+
+interface Lightning {
+    id: string;
+    opacity: number;
 }
 
 interface ToolParticle {
@@ -84,7 +90,7 @@ const Rain = memo(({ rainDrops }: { rainDrops: RainDrop[] }) => {
                         width: "2px",
                         height: "20px",
                         background: "linear-gradient(to bottom, rgba(174, 194, 224, 0.8), rgba(174, 194, 224, 0))",
-                        animation: `rainFall ${1.5 + Math.random() * 0.5}s linear infinite`,
+                        animation: `rainFall ${drop.duration}s linear infinite`,
                         animationDelay: `${drop.delay}s`,
                         zIndex: 10001,
                     }}
@@ -104,19 +110,18 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
     const [money, setMoney] = useState(initialMoney);
     const [placedSprouts, setPlacedSprouts] = useState<PlacedSprout[]>(() => {
         // Convert backend plants to PlacedSprouts
-        // Backend stores center-relative coords, need to convert to screen coords
         const centerX = window.innerWidth / 2;
         const centerY = window.innerHeight / 2;
 
         return initialPlants.map((plant) => ({
             id: `plant-${plant.plant_id}`,
-            x: centerX + plant.x, // Convert from center-relative to screen coords
-            y: centerY - plant.y, // Y is flipped (backend: positive = up, screen: positive = down)
+            x: centerX + plant.x,
+            y: centerY - plant.y,
             seedType: plant.plant_type as SeedType,
-            stage: plant.stage, // Include growth stage
-            species: plant.plant_species, // Include species
-            rarity: plant.rarity, // Include rarity
-            growth_time_remaining: plant.growth_time_remaining, // Include growth time
+            stage: plant.stage,
+            species: plant.plant_species,
+            rarity: plant.rarity,
+            growth_time_remaining: plant.growth_time_remaining,
         }));
     });
     const [hoveredSproutId, setHoveredSproutId] = useState<string | null>(null);
@@ -140,25 +145,27 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
     const [customCursorPosition, setCustomCursorPosition] = useState({ x: 0, y: 0 });
     const [isHoveringWeather, setIsHoveringWeather] = useState(false);
     const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
+    const [displayedMoney, setDisplayedMoney] = useState(initialMoney);
+    const [inventoryLimit, setInventoryLimit] = useState(initialPlantLimit);
+    const [isHoveringPlantCount, setIsHoveringPlantCount] = useState(false);
+    const [lightning, setLightning] = useState<Lightning | null>(null);
 
     // Function to play sounds
     const playSound = (soundPath: string) => {
         const audio = new Audio(soundPath);
-        audio.volume = 0.5; // Set volume to 50%
+        audio.volume = 0.5;
         audio.play().catch((error) => console.error("Audio play failed:", error, "Path:", soundPath));
     };
 
     // Handle wobble sound when sprout is attached
     useEffect(() => {
         if (attachedSproutId) {
-            // Create and play wobble sound on loop
             const audio = new Audio("/Audio/wobble.mp3");
             audio.volume = 0.02;
             audio.loop = true;
             audio.play().catch((error) => console.error("Wobble audio play failed:", error));
             setWobbleAudio(audio);
 
-            // Cleanup: stop audio when sprout is released
             return () => {
                 audio.pause();
                 audio.currentTime = 0;
@@ -167,15 +174,225 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
         }
     }, [attachedSproutId]);
 
+    // Handle rain audio with fade in/out
+    useEffect(() => {
+        let audio: HTMLAudioElement | null = null;
+        let fadeOutInterval: ReturnType<typeof setInterval> | null = null;
+
+        if (weather === "rainy") {
+            console.log("Starting rain audio...");
+            audio = new Audio("/Audio/rain.mp3");
+            audio.loop = true;
+            audio.volume = 0;
+
+            const playPromise = audio.play();
+
+            if (playPromise !== undefined) {
+                playPromise
+                    .then(() => {
+                        console.log("Rain audio started successfully");
+                        let fadeInInterval = setInterval(() => {
+                            if (audio && audio.volume < 0.03) {
+                                audio.volume = Math.min(audio.volume + 0.003, 0.03);
+                            } else {
+                                clearInterval(fadeInInterval);
+                            }
+                        }, 100);
+                    })
+                    .catch((error) => {
+                        console.error("Rain audio play failed:", error);
+                        const enableAudio = () => {
+                            if (audio) {
+                                audio.play()
+                                    .then(() => {
+                                        console.log("Rain audio started after user interaction");
+                                        let fadeInInterval = setInterval(() => {
+                                            if (audio && audio.volume < 0.03) {
+                                                audio.volume = Math.min(audio.volume + 0.003, 0.03);
+                                            } else {
+                                                clearInterval(fadeInInterval);
+                                            }
+                                        }, 100);
+                                        document.removeEventListener('click', enableAudio);
+                                    })
+                                    .catch(e => console.error("Still failed:", e));
+                            }
+                        };
+                        document.addEventListener('click', enableAudio, { once: true });
+                    });
+            }
+        }
+
+        return () => {
+            if (audio) {
+                console.log("Stopping rain audio...");
+                fadeOutInterval = setInterval(() => {
+                    if (audio && audio.volume > 0.01) {
+                        audio.volume = Math.max(audio.volume - 0.01, 0);
+                    } else {
+                        if (audio) {
+                            audio.pause();
+                            audio.currentTime = 0;
+                        }
+                        if (fadeOutInterval) {
+                            clearInterval(fadeOutInterval);
+                        }
+                    }
+                }, 50);
+            }
+        };
+    }, [weather]);
+
+    // Handle birds audio during sunny weather
+    useEffect(() => {
+        if (weather === "sunny") {
+            console.log("Starting birds audio...");
+            const audio = new Audio("/Audio/birds.mp3");
+            audio.loop = true;
+            audio.volume = 0;
+
+            const playPromise = audio.play();
+
+            if (playPromise !== undefined) {
+                playPromise
+                    .then(() => {
+                        console.log("Birds audio started successfully");
+                        let fadeInInterval = setInterval(() => {
+                            if (audio.volume < 0.15) {
+                                audio.volume = Math.min(audio.volume + 0.01, 0.15);
+                            } else {
+                                clearInterval(fadeInInterval);
+                            }
+                        }, 100);
+                    })
+                    .catch((error) => {
+                        console.error("Birds audio play failed:", error);
+                        const enableAudio = () => {
+                            audio.play()
+                                .then(() => {
+                                    console.log("Birds audio started after user interaction");
+                                    let fadeInInterval = setInterval(() => {
+                                        if (audio.volume < 0.15) {
+                                            audio.volume = Math.min(audio.volume + 0.01, 0.15);
+                                        } else {
+                                            clearInterval(fadeInInterval);
+                                        }
+                                    }, 100);
+                                    document.removeEventListener('click', enableAudio);
+                                })
+                                .catch(e => console.error("Still failed:", e));
+                        };
+                        document.addEventListener('click', enableAudio, { once: true });
+                    });
+            }
+
+            return () => {
+                console.log("Stopping birds audio...");
+                const fadeOutInterval = setInterval(() => {
+                    if (audio.volume > 0.01) {
+                        audio.volume = Math.max(audio.volume - 0.01, 0);
+                    } else {
+                        audio.pause();
+                        audio.currentTime = 0;
+                        clearInterval(fadeOutInterval);
+                    }
+                }, 50);
+            };
+        }
+    }, [weather]);
+
+    // Handle wind audio randomly during cloudy weather
+    useEffect(() => {
+        if (weather === "cloudy") {
+            let timeoutId: ReturnType<typeof setTimeout>;
+            let currentAudio: HTMLAudioElement | null = null;
+            let isCleanedUp = false;
+
+            const playWind = () => {
+                if (isCleanedUp) return;
+
+                console.log("Playing wind audio...");
+                const audio = new Audio("/Audio/wind.mp3");
+                audio.volume = 0;
+                currentAudio = audio;
+
+                audio.play()
+                    .then(() => {
+                        console.log("Wind audio started successfully");
+                        let fadeInInterval = setInterval(() => {
+                            if (audio.volume < 0.5) {
+                                audio.volume = Math.min(audio.volume + 0.03, 0.5);
+                            } else {
+                                clearInterval(fadeInInterval);
+                            }
+                        }, 100);
+
+                        audio.addEventListener('timeupdate', () => {
+                            if (audio.duration - audio.currentTime < 2) {
+                                if (audio.volume > 0.01) {
+                                    audio.volume = Math.max(audio.volume - 0.02, 0);
+                                }
+                            }
+                        });
+
+                        audio.addEventListener('ended', () => {
+                            currentAudio = null;
+                            if (!isCleanedUp) {
+                                const nextWind = Math.random() * 10000 + 5000;
+                                timeoutId = setTimeout(playWind, nextWind);
+                            }
+                        });
+                    })
+                    .catch((error) => {
+                        console.error("Wind audio play failed:", error);
+                        const enableAudio = () => {
+                            audio.play()
+                                .then(() => {
+                                    console.log("Wind audio started after user interaction");
+                                    let fadeInInterval = setInterval(() => {
+                                        if (audio.volume < 0.5) {
+                                            audio.volume = Math.min(audio.volume + 0.03, 0.5);
+                                        } else {
+                                            clearInterval(fadeInInterval);
+                                        }
+                                    }, 100);
+                                    document.removeEventListener('click', enableAudio);
+                                })
+                                .catch(e => console.error("Wind still failed:", e));
+                        };
+                        document.addEventListener('click', enableAudio, { once: true });
+                    });
+            };
+
+            timeoutId = setTimeout(playWind, Math.random() * 5000 + 2000);
+
+            return () => {
+                console.log("Stopping wind audio...");
+                isCleanedUp = true;
+                clearTimeout(timeoutId);
+                if (currentAudio) {
+                    currentAudio.pause();
+                    currentAudio.currentTime = 0;
+                    currentAudio = null;
+                }
+            };
+        }
+    }, [weather]);
+
     // Generate rain drops when weather changes
     useEffect(() => {
         if (weather === "rainy") {
             const drops: RainDrop[] = [];
             for (let i = 0; i < 50; i++) {
+                const duration = 1.5 + Math.random() * 0.5;
+                const delay = Math.random() * 2 - 2;
+                const xPosition = Math.random() * 100;
+
                 drops.push({
                     id: `rain-${i}`,
-                    x: Math.random() * 100, // percentage
-                    delay: Math.random() * 2 - 2, // Negative delay to start mid-animation
+                    x: xPosition,
+                    delay: delay,
+                    duration: duration,
                 });
             }
             setRainDrops(drops);
@@ -189,39 +406,92 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
         const scheduleNextWeatherChange = () => {
             const weatherTypes: WeatherType[] = ["sunny", "rainy", "cloudy"];
             const randomWeather = weatherTypes[Math.floor(Math.random() * weatherTypes.length)];
-            const randomInterval = Math.random() * 40000 + 20000; // Random between 20-60 seconds
+            const randomInterval = Math.random() * 40000 + 20000;
 
             const timeout = setTimeout(() => {
                 setWeather(randomWeather);
-                scheduleNextWeatherChange(); // Schedule the next change
+                scheduleNextWeatherChange();
             }, randomInterval);
 
             return timeout;
         };
 
         const timeout = scheduleNextWeatherChange();
-
         return () => clearTimeout(timeout);
     }, []);
+
+    // Trigger lightning randomly when it's raining
+    useEffect(() => {
+        if (weather === "rainy") {
+            let timeoutId: ReturnType<typeof setTimeout>;
+
+            const triggerLightning = () => {
+                const lightningId = `lightning-${Date.now()}`;
+                setLightning({ id: lightningId, opacity: 1 });
+
+                playSound("/Audio/thunder.mp3");
+
+                setTimeout(() => {
+                    setLightning(null);
+                }, 200);
+
+                const nextStrike = Math.random() * 7000 + 8000;
+                timeoutId = setTimeout(triggerLightning, nextStrike);
+            };
+
+            timeoutId = setTimeout(triggerLightning, Math.random() * 7000 + 8000);
+
+            return () => {
+                clearTimeout(timeoutId);
+                setLightning(null);
+            };
+        } else {
+            setLightning(null);
+        }
+    }, [weather]);
+
+    // Animate money counter when money changes
+    useEffect(() => {
+        const difference = money - displayedMoney;
+        if (difference === 0) return;
+
+        const duration = 500;
+        const steps = 20;
+        const stepValue = difference / steps;
+        const stepDuration = duration / steps;
+
+        let currentStep = 0;
+        const interval = setInterval(() => {
+            currentStep++;
+            if (currentStep >= steps) {
+                setDisplayedMoney(money);
+                clearInterval(interval);
+            } else {
+                setDisplayedMoney((prev) => prev + stepValue);
+            }
+        }, stepDuration);
+
+        return () => clearInterval(interval);
+    }, [money, displayedMoney]);
 
     const seedPackets: SeedPacket[] = [
         {
             id: "berry",
             type: "Berry",
             image: "/Sprites/UI/berryPacket.png",
-            price: 100,
+            price: 10,
         },
         {
             id: "fungi",
             type: "Fungi",
             image: "/Sprites/UI/fungiPacket.png",
-            price: 100,
+            price: 15,
         },
         {
             id: "rose",
             type: "Rose",
             image: "/Sprites/UI/rosePacket.png",
-            price: 100,
+            price: 20,
         },
     ];
 
@@ -241,7 +511,13 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
             id: "fertilizer",
             type: "Fertilizer",
             image: "/Sprites/UI/fertilizer.png",
-            price: 25,
+            price: 30,
+        },
+        {
+            id: "backpack",
+            type: "Backpack",
+            image: "/Sprites/UI/backpack.png",
+            price: 50,
         },
     ];
 
@@ -250,31 +526,25 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
         const stage = sprout.stage ?? 0;
         const species = sprout.species;
 
-        // Stage 0 always uses basic sprout (seedling)
         if (stage === 0) {
             return "/Sprites/basicSprout.png";
         }
 
-        // Stage 1 and 2 MUST have species to show proper sprites
         if (!species) {
             console.warn("🚨 Plant at stage", stage, "missing species, using basicSprout. Sprout:", sprout);
             return "/Sprites/basicSprout.png";
         }
 
-        // Stage 1 and 2 use specific sprites based on type and species
-        // Backend returns plant_type as "berry", "fungi", "rose" (lowercase)
         let plantType = sprout.seedType.toLowerCase();
-        const stageNumber = stage; // 1 or 2
+        const stageNumber = stage;
 
-        // Fix folder name for roses (folder is "roses" not "rose")
         if (plantType === "rose") {
             plantType = "roses";
         }
 
-        // Handle typo in fungi folder for mario mushroom stage 1
         let spriteSpecies = species;
         if (plantType === "fungi" && species === "mario_mushroom" && stageNumber === 1) {
-            spriteSpecies = "mario_mushcroom"; // Typo in actual filename
+            spriteSpecies = "mario_mushcroom";
         }
 
         const spritePath = `/Sprites/${plantType}/${spriteSpecies}_${stageNumber}.png`;
@@ -284,11 +554,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
     };
 
     async function greet() {
-        // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
         setGreetMsg(await invoke("greet", { name }));
     }
 
-    // Mouse-based drag handlers for seeds
     const handleSeedMouseDown = (seed: SeedPacket) => () => {
         console.log("🌱 Mouse down on seed:", seed.type);
         setDraggedSeed(seed);
@@ -296,13 +564,11 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
         setMouseDownTime(Date.now());
     };
 
-    // Mouse-based drag handlers for tools
     const handleToolMouseDown = (tool: Tool) => () => {
         console.log("🔧 Mouse down on tool:", tool.type);
         setDraggedTool(tool);
         setMouseDownTime(Date.now());
 
-        // Play tool-specific sound when starting to drag
         if (tool.type === "Spade") {
             playSound("/Audio/spadeclink.mp3");
         } else if (tool.type === "WateringCan") {
@@ -313,7 +579,6 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
     };
 
     const findSproutAtPosition = (x: number, y: number): string | null => {
-        // Check if any sprout is within 48px (half of 96px width) of the cursor
         const sprout = placedSprouts.find((s) => {
             const dx = Math.abs(s.x - x);
             const dy = Math.abs(s.y - y);
@@ -323,34 +588,19 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
     };
 
     const checkCollision = (x: number, y: number, excludeId?: string): boolean => {
-        // Check if position collides with any other sprout (within 30px - allows very close placement)
         return placedSprouts.some((s) => {
-            if (excludeId && s.id === excludeId) return false; // Exclude the sprout being moved
+            if (excludeId && s.id === excludeId) return false;
             const dx = Math.abs(s.x - x);
             const dy = Math.abs(s.y - y);
-            return dx < 30 && dy < 30; // Allow sprouts to be placed very close together
+            return dx < 30 && dy < 30;
         });
     };
 
     const isInUIArea = (x: number, y: number): boolean => {
-        // Define UI exclusion zones - generously sized to ensure no overlap with UI
-
-        // Top left - seed packets area
-        // Block 0-450px wide, top 200px
         if (y < 200 && x < 450) return true;
-
-        // Top right - money display
-        // Block last 350px, top 200px
         if (y < 200 && x > window.innerWidth - 350) return true;
-
-        // Bottom left - tools area (spade, watering can, fertilizer)
-        // Block 0-550px wide, bottom 200px
         if (y > window.innerHeight - 200 && x < 550) return true;
-
-        // Bottom right - timer
-        // Block last 350px, bottom 200px
         if (y > window.innerHeight - 200 && x > window.innerWidth - 350) return true;
-
         return false;
     };
 
@@ -359,13 +609,10 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
         setCursorPosition(newPosition);
         setCustomCursorPosition(newPosition);
 
-        // Create trail particles when dragging attached sprout
         if (attachedSproutId) {
             const distance = Math.sqrt(Math.pow(newPosition.x - lastCursorPosition.x, 2) + Math.pow(newPosition.y - lastCursorPosition.y, 2));
 
-            // Only create trail if cursor moved enough
             if (distance > 10) {
-                // Create multiple particles with slight randomization
                 const particleCount = 2;
                 const newTrails: TrailParticle[] = [];
 
@@ -373,7 +620,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                     const offsetX = (Math.random() - 0.5) * 20;
                     const offsetY = (Math.random() - 0.5) * 20;
                     const trailId = `trail-${Date.now()}-${i}`;
-                    const size = Math.floor(Math.random() * 3) + 3; // Random size between 3-5px
+                    const size = Math.floor(Math.random() * 3) + 3;
 
                     newTrails.push({
                         id: trailId,
@@ -382,7 +629,6 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         size: size,
                     });
 
-                    // Remove trail particle after animation
                     setTimeout(() => {
                         setTrailParticles((prev) => prev.filter((t) => t.id !== trailId));
                     }, 500);
@@ -399,46 +645,40 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
             setIsDraggingOverBackground(true);
         } else if (draggedTool) {
             setDragPosition({ x: e.clientX, y: e.clientY });
-            // Check if tool is over a sprout
             const sproutId = findSproutAtPosition(e.clientX, e.clientY);
             setHoveredSproutId(sproutId);
         }
     };
 
     const handleGlobalMouseUp = () => {
-        // Only handle mouse up if we're dragging something NEW (seed or tool)
-        // Don't handle if a sprout is already attached
         if ((draggedSeed || draggedTool) && !attachedSproutId) {
             console.log("🖱️ Mouse up - placing item");
 
-            // Handle seed placement
             if (draggedSeed && money >= draggedSeed.price) {
                 const hasCollision = checkCollision(cursorPosition.x, cursorPosition.y);
                 const inUIArea = isInUIArea(cursorPosition.x, cursorPosition.y);
+                const inventoryFull = placedSprouts.length >= inventoryLimit;
 
-                if (!hasCollision && !inUIArea) {
-                    // Calculate position relative to center of screen
+                if (!hasCollision && !inUIArea && !inventoryFull) {
                     const centerX = window.innerWidth / 2;
                     const centerY = window.innerHeight / 2;
                     const relativeX = cursorPosition.x - centerX;
-                    const relativeY = centerY - cursorPosition.y; // Invert Y for backend
-                    const currentMoney = money; // Capture current value for rollback
+                    const relativeY = centerY - cursorPosition.y;
+                    const currentMoney = money;
 
-                    // Optimistic update: Create temporary sprout ID and update UI immediately
                     const tempSproutId = `temp-plant-${Date.now()}`;
                     const newSprout = {
                         id: tempSproutId,
                         x: cursorPosition.x,
                         y: cursorPosition.y,
                         seedType: draggedSeed.type,
-                        stage: 0, // New plants start at stage 0
+                        stage: 0,
                     };
 
                     setPlacedSprouts([...placedSprouts, newSprout]);
                     setMoney(currentMoney - draggedSeed.price);
                     playSound("/Audio/placingPlant.mp3");
 
-                    // Create dirt particles when planting
                     const particleCount = 5;
                     const newTrails: TrailParticle[] = [];
                     for (let i = 0; i < particleCount; i++) {
@@ -462,11 +702,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                     }
                     setTrailParticles((prev) => [...prev, ...newTrails]);
 
-                    // Trigger settle animation
                     setNewlyPlacedSproutId(tempSproutId);
                     setTimeout(() => setNewlyPlacedSproutId(null), 400);
 
-                    // Call API to create plant in background
                     apiService
                         .createPlant(
                             userEmail,
@@ -478,15 +716,12 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                             authToken
                         )
                         .then((response) => {
-                            // Replace temp ID with real plant_id from backend
                             const realSproutId = `plant-${response.plant_id}`;
                             setPlacedSprouts((prev) => prev.map((s) => (s.id === tempSproutId ? { ...s, id: realSproutId } : s)));
-                            // Update money with actual balance from server
                             setMoney(response.new_balance);
                         })
                         .catch((error) => {
                             console.error("Failed to create plant:", error);
-                            // Rollback optimistic update on error
                             setPlacedSprouts((prev) => prev.filter((s) => s.id !== tempSproutId));
                             setMoney(currentMoney);
                             playSound("/Audio/error.mp3");
@@ -496,11 +731,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                 }
             }
 
-            // Handle tool actions
             else if (draggedTool) {
                 if (hoveredSproutId) {
                     if (draggedTool.type === "Spade") {
-                        // Attach the sprout to cursor when spade is released
                         console.log("🌱 Attaching sprout to cursor:", hoveredSproutId);
                         playSound("/Audio/shovel.mp3");
                         setAttachedSproutId(hoveredSproutId);
@@ -508,21 +741,18 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         setLastCursorPosition(cursorPosition);
                         setHoveredSproutId(null);
                     } else if (draggedTool.type === "Fertilizer") {
-                        // Extract plant_id from sprout id
                         const plantIdStr = hoveredSproutId.replace("plant-", "").replace("temp-plant-", "");
                         const plantId = parseInt(plantIdStr);
                         const targetSprout = placedSprouts.find((s) => s.id === hoveredSproutId);
                         const currentStage = targetSprout?.stage ?? 0;
                         const growthTimeRemaining = targetSprout?.growth_time_remaining;
 
-                        // Don't allow fertilizing temporary plants (not yet saved to backend)
                         if (isNaN(plantId) || hoveredSproutId.startsWith("temp-")) {
                             playSound("/Audio/error.mp3");
                             setHoveredSproutId(null);
                             return;
                         }
 
-                        // Fertilizer only works on stage 1 plants with null growth_time_remaining
                         if (currentStage !== 1) {
                             console.log("🌿 Cannot fertilize - plant must be at stage 1 (current stage:", currentStage, ")");
                             playSound("/Audio/error.mp3");
@@ -537,15 +767,13 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                             return;
                         }
 
-                        const fertilizerCost = draggedTool.price || 25;
+                        const fertilizerCost = draggedTool.price || 30;
 
                         console.log("🌿 Fertilizing plant:", { plantId, currentMoney: money, fertilizerCost, newMoney: money - fertilizerCost });
 
-                        // Update UI immediately - simple subtraction
                         setMoney(money - fertilizerCost);
                         playSound("/Audio/fertilizerUse.mp3");
 
-                        // Create golden sparkle particles for fertilizer
                         const sprout = placedSprouts.find((s) => s.id === hoveredSproutId);
                         if (sprout) {
                             const particleCount = 8;
@@ -560,9 +788,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                     x: sprout.x,
                                     y: sprout.y,
                                     size: Math.floor(Math.random() * 4) + 4,
-                                    color: "#FFD700", // Gold
+                                    color: "#FFD700",
                                     velocityX: Math.cos(angle) * speed,
-                                    velocityY: Math.sin(angle) * speed - 2, // Rising upward
+                                    velocityY: Math.sin(angle) * speed - 2,
                                 });
 
                                 setTimeout(() => {
@@ -573,25 +801,21 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         }
                         setHoveredSproutId(null);
 
-                        // Call API to apply fertilizer in background (don't wait for response)
                         apiService.applyFertilizer(userEmail, plantId, authToken).catch((error) => {
                             console.error("❌ Failed to apply fertilizer:", error);
                         });
                     } else if (draggedTool.type === "WateringCan") {
-                        // Extract plant_id from sprout id
                         const plantIdStr = hoveredSproutId.replace("plant-", "").replace("temp-plant-", "");
                         const plantId = parseInt(plantIdStr);
                         const targetSprout = placedSprouts.find((s) => s.id === hoveredSproutId);
                         const currentStage = targetSprout?.stage ?? 0;
 
-                        // Don't allow watering temporary plants (not yet saved to backend)
                         if (isNaN(plantId) || hoveredSproutId.startsWith("temp-")) {
                             playSound("/Audio/error.mp3");
                             setHoveredSproutId(null);
                             return;
                         }
 
-                        // Don't allow watering plants at stage 1 or 2 (already grown)
                         if (currentStage >= 1) {
                             console.log("💧 Cannot water - plant already at stage", currentStage);
                             playSound("/Audio/error.mp3");
@@ -603,50 +827,45 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
 
                         console.log("💧 Watering plant:", { plantId, currentMoney: money, waterCost, newMoney: money - waterCost });
 
-                        // Update UI immediately - simple subtraction
                         setMoney(money - waterCost);
                         playSound("/Audio/wateringcanuse.mp3");
 
-                        // Create blue water droplet particles
                         const sprout = placedSprouts.find((s) => s.id === hoveredSproutId);
                         if (sprout) {
-                            const particleCount = 15; // More particles
+                            const particleCount = 15;
                             const newParticles: ToolParticle[] = [];
                             for (let i = 0; i < particleCount; i++) {
-                                const angle = Math.random() * Math.PI - Math.PI / 2; // Spray downward
+                                const angle = Math.random() * Math.PI - Math.PI / 2;
                                 const speed = 2 + Math.random() * 3;
                                 const particleId = `water-${Date.now()}-${i}`;
 
                                 newParticles.push({
                                     id: particleId,
                                     x: sprout.x,
-                                    y: sprout.y - 30, // Start above the plant
-                                    size: Math.floor(Math.random() * 5) + 5, // Bigger: 5-10px
-                                    color: "#4A9EFF", // Blue
+                                    y: sprout.y - 30,
+                                    size: Math.floor(Math.random() * 5) + 5,
+                                    color: "#4A9EFF",
                                     velocityX: Math.cos(angle) * speed,
-                                    velocityY: Math.sin(angle) * speed + 3, // Falling downward
+                                    velocityY: Math.sin(angle) * speed + 3,
                                 });
 
                                 setTimeout(() => {
                                     setToolParticles((prev) => prev.filter((p) => p.id !== particleId));
-                                }, 800); // Last longer
+                                }, 800);
                             }
                             setToolParticles((prev) => [...prev, ...newParticles]);
                         }
                         setHoveredSproutId(null);
 
-                        // Call API to apply water in background (don't wait for response)
                         apiService.applyWater(userEmail, plantId, authToken).catch((error) => {
                             console.error("❌ Failed to apply water:", error);
                         });
                     }
                 } else {
-                    // Tool used on empty ground - play error sound
                     playSound("/Audio/error.mp3");
                 }
             }
 
-            // Reset dragging state
             setDraggedSeed(null);
             setDraggedTool(null);
             setIsDraggingOverBackground(false);
@@ -663,13 +882,11 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
             attachedSproutId,
         });
 
-        // If a sprout was just attached, ignore clicks for 200ms to prevent immediate placement
         if (attachedSproutId && timeSinceSproutAttached < 200) {
             console.log("❌ Ignoring click - sprout was just attached");
             return;
         }
 
-        // Ignore clicks that happen within 100ms of mouse down (these are drag releases, not real clicks)
         if (timeSinceMouseDown < 100) {
             console.log("❌ Ignoring click - too soon after mouse down");
             return;
@@ -677,17 +894,13 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
 
         if (attachedSproutId) {
             console.log("✅ Processing click with attached sprout");
-            // Check if clicking on dollar sign to sell sprout
             if (isHoveringDollarSign) {
-                // Sell the sprout - remove it and refund half the price
                 const sproutToSell = placedSprouts.find((s) => s.id === attachedSproutId);
                 if (sproutToSell) {
-                    // Extract plant_id from sprout id
                     const plantIdStr = attachedSproutId.replace("plant-", "").replace("temp-plant-", "");
                     const plantId = parseInt(plantIdStr);
                     const plantStage = sproutToSell.stage ?? 0;
 
-                    // Can't sell temporary plants (not yet saved to backend)
                     if (isNaN(plantId) || attachedSproutId.startsWith("temp-")) {
                         playSound("/Audio/error.mp3");
                         return;
@@ -695,8 +908,6 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
 
                     console.log("💰 Selling plant:", { plantId, plantStage });
 
-                    // Optimistic update: Update UI immediately
-                    // Only create coin particles if plant is stage 1 or 2 (stage 0 gives no money)
                     if (plantStage > 0) {
                         const newCoins: CoinParticle[] = [];
                         for (let i = 0; i < 5; i++) {
@@ -710,7 +921,6 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         }
                         setCoinParticles([...coinParticles, ...newCoins]);
 
-                        // Remove coins after animation
                         setTimeout(() => {
                             setCoinParticles((prev) => prev.filter((c) => !newCoins.find((nc) => nc.id === c.id)));
                         }, 1000);
@@ -721,12 +931,10 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                     setIsHoveringDollarSign(false);
                     playSound("/Audio/sell.mp3");
 
-                    // Call API to sell plant in background
                     apiService
                         .sellPlant(userEmail, plantId, authToken)
                         .then((response) => {
                             console.log("💰 Sell response:", response);
-                            // Update money with actual balance from server
                             setMoney(response.new_balance);
                         })
                         .catch((error) => {
@@ -737,26 +945,21 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                 return;
             }
 
-            // Check for collision and UI area before placing
             const hasCollision = checkCollision(e.clientX, e.clientY, attachedSproutId);
             const inUIArea = isInUIArea(e.clientX, e.clientY);
 
             if (!hasCollision && !inUIArea) {
-                // Extract plant_id from sprout id
                 const plantIdStr = attachedSproutId.replace("plant-", "").replace("temp-plant-", "");
                 const plantId = parseInt(plantIdStr);
 
-                // Calculate center-relative coordinates for backend
                 const centerX = window.innerWidth / 2;
                 const centerY = window.innerHeight / 2;
                 const relativeX = e.clientX - centerX;
                 const relativeY = centerY - e.clientY;
 
                 console.log("🚚 Moving plant:", { plantId, isTemp: attachedSproutId.startsWith("temp-"), relativeX, relativeY });
-                // Optimistic update: Update UI immediately
                 setPlacedSprouts(placedSprouts.map((sprout) => (sprout.id === attachedSproutId ? { ...sprout, x: e.clientX, y: e.clientY } : sprout)));
 
-                // Create dirt particles when replanting
                 const particleCount = 5;
                 const newTrails: TrailParticle[] = [];
                 for (let i = 0; i < particleCount; i++) {
@@ -780,20 +983,17 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                 }
                 setTrailParticles((prev) => [...prev, ...newTrails]);
 
-                // Trigger settle animation for replanted sprout
                 setNewlyPlacedSproutId(attachedSproutId);
                 setTimeout(() => setNewlyPlacedSproutId(null), 400);
 
                 setAttachedSproutId(null);
                 playSound("/Audio/placingPlant.mp3");
 
-                // Call API to move plant in background (skip for temp plants)
                 if (!isNaN(plantId) && !attachedSproutId.startsWith("temp-")) {
                     apiService
                         .movePlant(userEmail, plantId, { x: relativeX, y: relativeY }, authToken)
                         .then(() => {
                             console.log("🚚 Plant moved successfully");
-                            // Success - no need to update UI again
                         })
                         .catch((error) => {
                             console.error("❌ Failed to move plant:", error);
@@ -801,10 +1001,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         });
                 }
             } else {
-                // Can't place - collision or in UI area
                 playSound("/Audio/error.mp3");
             }
-            // If collision or in UI area, don't place and keep sprout attached
         }
     };
 
@@ -836,7 +1034,6 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
 
     return (
         <>
-            {/* Custom Cursor */}
             <img
                 src={draggedSeed || draggedTool || attachedSproutId ? "/Sprites/UI/cursorgrab.png" : "/Sprites/UI/cursor.png"}
                 alt="cursor"
@@ -852,8 +1049,18 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                 draggable={false}
             />
 
-            {/* Weather effects - Rain */}
             {weather === "rainy" && <Rain rainDrops={rainDrops} />}
+
+            {lightning && (
+                <div
+                    className="pointer-events-none fixed inset-0 bg-white"
+                    style={{
+                        opacity: lightning.opacity,
+                        zIndex: 10002,
+                        animation: "lightningFlash 0.2s ease-out",
+                    }}
+                />
+            )}
 
             <main
                 className="h-screen w-full flex justify-center relative"
@@ -867,18 +1074,21 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                 onMouseUp={handleGlobalMouseUp}
                 onClick={handleClick}
             >
-                {/* Weather tint overlay - always present with smooth transitions */}
                 <div
                     className="pointer-events-none absolute inset-0"
                     style={{
-                        backgroundColor: weather === "sunny" ? "rgba(255, 230, 100, 0.35)" : weather === "rainy" ? "rgba(100, 120, 140, 0.4)" : "rgba(255, 255, 255, 0)", // Cloudy = no tint
+                        backgroundColor:
+                            weather === "sunny"
+                                ? "rgba(255, 230, 100, 0.35)"
+                                : weather === "rainy"
+                                ? "rgba(100, 120, 140, 0.4)"
+                                : "rgba(255, 255, 255, 0)",
                         mixBlendMode: "multiply",
                         zIndex: 0,
                         transition: "background-color 2s ease-in-out",
                     }}
                 />
 
-                {/* Render placed sprouts */}
                 {placedSprouts.map((sprout) => {
                     const isAttached = attachedSproutId === sprout.id;
                     const isHovered = hoveredSproutId === sprout.id;
@@ -897,22 +1107,31 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                 left: isAttached ? cursorPosition.x - 48 : sprout.x - 48,
                                 top: isAttached ? cursorPosition.y - 48 : sprout.y - 48,
                                 opacity: isAttached ? 0.7 : 1,
-                                filter: hasCollision || inUIArea ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)" : isHovered && !isAttached ? "brightness(1.3)" : "none",
+                                filter:
+                                    hasCollision || inUIArea
+                                        ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)"
+                                        : isHovered && !isAttached
+                                        ? "brightness(1.3)"
+                                        : "none",
                                 transition: isAttached ? "none" : "all 0.3s",
                                 zIndex: isAttached ? 9999 : 1,
-                                animation: isAttached ? "shake 0.15s ease-in-out infinite" : isNewlyPlaced ? "settle 0.4s ease-out" : "none",
+                                animation: isAttached
+                                    ? "shake 0.15s ease-in-out infinite"
+                                    : isNewlyPlaced
+                                    ? "settle 0.4s ease-out"
+                                    : "none",
                             }}
                         />
                     );
                 })}
 
-                {/* Seed drag preview */}
                 {isDraggingOverBackground &&
                     draggedSeed &&
                     (() => {
                         const hasCollision = checkCollision(dragPosition.x, dragPosition.y);
                         const inUIArea = isInUIArea(dragPosition.x, dragPosition.y);
                         const canAfford = money >= draggedSeed.price;
+                        const inventoryFull = placedSprouts.length >= inventoryLimit;
 
                         return (
                             <div
@@ -920,20 +1139,26 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                 style={{
                                     left: dragPosition.x - 48,
                                     top: dragPosition.y - 48,
-                                    filter: hasCollision || !canAfford || inUIArea ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)" : "brightness(1.2) saturate(1.5) contrast(1.1)",
+                                    filter:
+                                        hasCollision || !canAfford || inUIArea || inventoryFull
+                                            ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)"
+                                            : "brightness(1.2) saturate(1.5) contrast(1.1)",
                                     zIndex: 9999,
                                 }}
                             >
-                                <img src="/Sprites/basicSprout.png" alt="sprout preview" className="w-full h-full object-contain" draggable={false} />
+                                <img
+                                    src="/Sprites/basicSprout.png"
+                                    alt="sprout preview"
+                                    className="w-full h-full object-contain"
+                                    draggable={false}
+                                />
                             </div>
                         );
                     })()}
 
-                {/* Tool drag preview */}
                 {draggedTool &&
                     !attachedSproutId &&
                     (() => {
-                        // Calculate rotation based on cursor velocity (approximated by last position)
                         const rotation = hoveredSproutId ? 15 : 0;
                         return (
                             <img
@@ -952,7 +1177,6 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         );
                     })()}
 
-                {/* Trail particles */}
                 {trailParticles.map((trail) => {
                     const halfSize = trail.size / 2;
                     return (
@@ -974,9 +1198,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                     );
                 })}
 
-                {/* Tool particles (water/fertilizer) */}
                 {toolParticles.map((particle) => {
-                    const duration = particle.color === "#FFD700" ? 0.8 : 0.6; // Gold slower, water faster
+                    const duration = particle.color === "#FFD700" ? 0.8 : 0.6;
                     return (
                         <div
                             key={particle.id}
@@ -997,9 +1220,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                     );
                 })}
 
-                {/* Coin particles */}
                 {coinParticles.map((coin) => {
-                    // Calculate target position (money display is in top right)
                     const targetX = window.innerWidth - 150;
                     const targetY = 80;
 
@@ -1025,11 +1246,16 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                     );
                 })}
 
-                <div className="h-full w-full flex flex-col justify-between">
+                <div className="h-full w-full flex flex-col justify-between relative z-10">
                     <div className="flex flex-row justify-between h-fit w-full p-8">
                         <div className="flex flex-row gap-4 items-center">
                             <div className="relative w-fit h-fit">
-                                <img src="/Sprites/UI/PacketUI.png" className="image-pixelated w-[300px] h-auto" alt="packet ui" draggable={false} />
+                                <img
+                                    src="/Sprites/UI/PacketUI.png"
+                                    className="image-pixelated w-[300px] h-auto"
+                                    alt="packet ui"
+                                    draggable={false}
+                                />
                                 <ol className="absolute inset-0 flex flex-row justify-between items-center gap-3 px-10">
                                     {seedPackets.map((seed) => {
                                         const canAfford = money >= seed.price;
@@ -1045,13 +1271,23 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                     }
                                                 }}
                                                 onMouseLeave={() => setHoveredPacketId(null)}
-                                                className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all ${draggedSeed?.id === seed.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : canAfford ? "opacity-100 cursor-grab active:cursor-grabbing active:scale-95 wiggle-hover" : "opacity-30 cursor-not-allowed"}`}
+                                                className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all ${
+                                                    draggedSeed?.id === seed.id
+                                                        ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95"
+                                                        : canAfford
+                                                        ? "opacity-100 cursor-grab active:cursor-grabbing active:scale-95 wiggle-hover"
+                                                        : "opacity-30 cursor-not-allowed"
+                                                }`}
                                                 style={{
                                                     filter: !canAfford ? "grayscale(100%)" : "none",
                                                 }}
                                             >
-                                                <img src={seed.image} className="w-fit h-full image-pixelated object-contain pointer-events-none" alt={`${seed.type} packet`} draggable={false} />
-                                                {/* Show berry dots when hovering over berry packet */}
+                                                <img
+                                                    src={seed.image}
+                                                    className="w-fit h-full image-pixelated object-contain pointer-events-none"
+                                                    alt={`${seed.type} packet`}
+                                                    draggable={false}
+                                                />
                                                 {seed.id === "berry" && isHovered && (
                                                     <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
                                                         <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-50%" }}>
@@ -1068,7 +1304,6 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                         </div>
                                                     </div>
                                                 )}
-                                                {/* Show mushroom variants when hovering over fungi packet */}
                                                 {seed.id === "fungi" && isHovered && (
                                                     <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
                                                         <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-50%" }}>
@@ -1085,7 +1320,6 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                         </div>
                                                     </div>
                                                 )}
-                                                {/* Show rose variants when hovering over rose packet */}
                                                 {seed.id === "rose" && isHovered && (
                                                     <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
                                                         <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-90%" }}>
@@ -1106,25 +1340,122 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                         </div>
                                                     </div>
                                                 )}
-                                                <div className={`text-xs pointer-events-none ${!canAfford ? "text-red-600" : ""}`}>${seed.price}</div>
+                                                <div className={`text-sm pointer-events-none font-bold ${!canAfford ? "text-red-600" : ""}`} style={{ color: !canAfford ? "" : "#9e4539" }}>
+                                                    ${seed.price}
+                                                </div>
                                             </li>
                                         );
                                     })}
                                 </ol>
                             </div>
-                            {/* Weather Icon Display */}
-                            <div className="flex flex-col items-center gap-1 relative" onMouseEnter={() => setIsHoveringWeather(true)} onMouseLeave={() => setIsHoveringWeather(false)}>
-                                <img src={getWeatherIcon()} alt={`${weather} weather`} className="image-pixelated w-12 h-12 object-contain" draggable={false} />
+
+                            <div className="relative w-fit h-fit">
+                                <img
+                                    src="/Sprites/UI/PacketUI.png"
+                                    className="image-pixelated w-[300px] h-auto"
+                                    alt="tool packet ui"
+                                    draggable={false}
+                                />
+                                <ol className="absolute inset-0 flex flex-row justify-between items-center gap-3 px-10">
+                                    {tools.filter(tool => tool.type === "WateringCan" || tool.type === "Fertilizer" || tool.type === "Backpack").map((tool) => {
+                                        return (
+                                            <li
+                                                key={tool.id}
+                                                onMouseDown={
+                                                    !attachedSproutId && tool.type !== "Backpack"
+                                                        ? handleToolMouseDown(tool)
+                                                        : undefined
+                                                }
+                                                onClick={() => {
+                                                    if (tool.type === "Backpack" && money >= (tool.price || 0)) {
+                                                        setMoney(money - (tool.price || 0));
+                                                        setInventoryLimit(inventoryLimit + 5);
+                                                        playSound("/Audio/interact.mp3");
+                                                    } else if (tool.type === "Backpack") {
+                                                        playSound("/Audio/error.mp3");
+                                                    }
+                                                }}
+                                                onMouseEnter={() => {
+                                                    if (!attachedSproutId) {
+                                                        playSound("/Audio/interact.mp3");
+                                                        setHoveredToolId(tool.id);
+                                                    }
+                                                }}
+                                                onMouseLeave={() => {
+                                                    setHoveredToolId(null);
+                                                }}
+                                                className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all relative ${
+                                                    tool.type === "Backpack"
+                                                        ? money >= (tool.price || 0)
+                                                            ? "opacity-100 cursor-pointer active:scale-95 wiggle-hover"
+                                                            : "opacity-30 cursor-not-allowed"
+                                                        : draggedTool?.id === tool.id
+                                                        ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95"
+                                                        : attachedSproutId
+                                                        ? "opacity-30 cursor-not-allowed"
+                                                        : "opacity-100 cursor-grab active:cursor-grabbing active:scale-95 wiggle-hover"
+                                                }`}
+                                                style={{
+                                                    pointerEvents: tool.type === "Backpack" ? "auto" : attachedSproutId ? "none" : "auto",
+                                                    filter: tool.type === "Backpack" && money < (tool.price || 0) ? "grayscale(100%)" : "none",
+                                                }}
+                                            >
+                                                <div className="h-full flex items-center justify-center">
+                                                    <img
+                                                        src={tool.image}
+                                                        className={`image-pixelated object-contain pointer-events-none ${
+                                                            tool.type === "Backpack" ? "w-10 h-10" : "w-fit h-full"
+                                                        }`}
+                                                        alt={`${tool.type} tool`}
+                                                        draggable={false}
+                                                    />
+                                                </div>
+                                                <div className="text-sm pointer-events-none font-bold" style={{ color: "#9e4539" }}>
+                                                    ${tool.price}
+                                                </div>
+
+                                                {hoveredToolId === tool.id && (tool.type !== "Backpack" ? !attachedSproutId : true) && (
+                                                    <div
+                                                        className="absolute top-full mt-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold"
+                                                        style={{
+                                                            backgroundColor: "#D4A574",
+                                                            border: "3px solid #8B4513",
+                                                            color: "#9e4539",
+                                                            boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                            imageRendering: "pixelated",
+                                                        }}
+                                                    >
+                                                        {tool.type === "WateringCan" && "Turn seedlings into sprouts"}
+                                                        {tool.type === "Fertilizer" && "Turn sprouts into plants"}
+                                                        {tool.type === "Backpack" && `Upgrade inventory (+5 slots)`}
+                                                    </div>
+                                                )}
+                                            </li>
+                                        );
+                                    })}
+                                </ol>
+                            </div>
+
+                            <div
+                                className="flex flex-col items-center gap-1 relative"
+                                onMouseEnter={() => setIsHoveringWeather(true)}
+                                onMouseLeave={() => setIsHoveringWeather(false)}
+                            >
+                                <img
+                                    src={getWeatherIcon()}
+                                    alt={`${weather} weather`}
+                                    className="image-pixelated w-12 h-12 object-contain"
+                                    draggable={false}
+                                />
                                 <div className="text-xs text-white font-bold capitalize">{weather}</div>
 
-                                {/* Weather effect description on hover */}
                                 {isHoveringWeather && (
                                     <div
-                                        className="absolute top-full mt-2 text-xs px-3 py-2 whitespace-nowrap z-50 font-bold"
+                                        className="absolute top-full mt-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold"
                                         style={{
                                             backgroundColor: "#D4A574",
                                             border: "3px solid #8B4513",
-                                            color: "#3D2817",
+                                            color: "#9e4539",
                                             boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
                                             imageRendering: "pixelated",
                                         }}
@@ -1134,23 +1465,36 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                 )}
                             </div>
                         </div>
-                        <div className="flex justify-center">
-                            <div className="text-5xl text-white font-bold">${money}</div>
+                        <div className="flex flex-col items-center gap-2">
+                            <div className="text-5xl text-white font-bold">${Math.round(displayedMoney)}</div>
                         </div>
                     </div>
                     <div className="p-8 flex flex-row justify-between items-center">
-                        <div className="flex flex-row gap-4">
-                            {tools.map((tool) => {
-                                // Show dollar sign for spade when sprout is attached
+                        <div className="flex flex-row gap-4 items-center">
+                            {tools.filter(tool => tool.type === "Spade").map((tool) => {
                                 const showDollarSign = tool.type === "Spade" && attachedSproutId;
-                                const displayImage = showDollarSign ? "/Sprites/UI/dollarsign.png" : tool.image;
+                                const displayImage = showDollarSign
+                                    ? "/Sprites/UI/dollarsign.png"
+                                    : tool.image;
 
                                 return (
-                                    <div key={tool.id} className="relative w-fit h-fit flex flex-col items-center gap-1">
+                                    <div
+                                        key={tool.id}
+                                        className="relative w-fit h-fit flex flex-col items-center gap-1"
+                                    >
                                         <div className="relative w-fit h-fit">
-                                            <img src="/Sprites/UI/SpadeUI.png" className="image-pixelated w-[100px] h-auto" alt="tool ui background" draggable={false} />
+                                            <img
+                                                src="/Sprites/UI/SpadeUI.png"
+                                                className="image-pixelated w-[100px] h-auto"
+                                                alt="tool ui background"
+                                                draggable={false}
+                                            />
                                             <div
-                                                onMouseDown={!attachedSproutId ? handleToolMouseDown(tool) : undefined}
+                                                onMouseDown={
+                                                    !attachedSproutId
+                                                        ? handleToolMouseDown(tool)
+                                                        : undefined
+                                                }
                                                 onMouseEnter={() => {
                                                     if (showDollarSign) {
                                                         setIsHoveringDollarSign(true);
@@ -1163,36 +1507,75 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                     if (showDollarSign) setIsHoveringDollarSign(false);
                                                     setHoveredToolId(null);
                                                 }}
-                                                className={`absolute inset-0 flex justify-center items-center active:scale-95 transition-all ${attachedSproutId && !showDollarSign ? "opacity-30 cursor-not-allowed" : showDollarSign ? "opacity-100 cursor-pointer wiggle-hover" : draggedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing" : "opacity-100 cursor-grab active:cursor-grabbing wiggle-hover"}`}
+                                                className={`absolute inset-0 flex justify-center items-center active:scale-95 transition-all ${
+                                                    attachedSproutId && !showDollarSign
+                                                        ? "opacity-30 cursor-not-allowed"
+                                                        : showDollarSign
+                                                        ? "opacity-100 cursor-pointer wiggle-hover"
+                                                        : draggedTool?.id === tool.id
+                                                        ? "opacity-50 cursor-grab active:cursor-grabbing"
+                                                        : "opacity-100 cursor-grab active:cursor-grabbing wiggle-hover"
+                                                }`}
                                                 style={{
-                                                    pointerEvents: attachedSproutId && !showDollarSign ? "none" : "auto",
+                                                    pointerEvents:
+                                                        attachedSproutId && !showDollarSign ? "none" : "auto",
                                                 }}
                                             >
-                                                <img src={displayImage} className="h-12 w-auto image-pixelated object-contain pointer-events-none" draggable={false} alt={showDollarSign ? "Sell sprout" : `${tool.type} tool`} />
+                                                <img
+                                                    src={displayImage}
+                                                    className="h-12 w-auto image-pixelated object-contain pointer-events-none"
+                                                    draggable={false}
+                                                    alt={
+                                                        showDollarSign ? "Sell sprout" : `${tool.type} tool`
+                                                    }
+                                                />
                                             </div>
                                         </div>
-                                        {tool.price && !showDollarSign && <div className="text-base text-white font-bold">${tool.price}</div>}
+                                        {tool.price && !showDollarSign && (
+                                            <div className="text-base text-white font-bold">
+                                                ${tool.price}
+                                            </div>
+                                        )}
 
-                                        {/* Tool tooltip */}
                                         {hoveredToolId === tool.id && !showDollarSign && !attachedSproutId && (
                                             <div
-                                                className="absolute bottom-full mb-2 text-xs px-3 py-2 whitespace-nowrap z-50 font-bold"
+                                                className="absolute bottom-full mb-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold"
                                                 style={{
                                                     backgroundColor: "#D4A574",
                                                     border: "3px solid #8B4513",
-                                                    color: "#3D2817",
+                                                    color: "#9e4539",
                                                     boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
                                                     imageRendering: "pixelated",
                                                 }}
                                             >
-                                                {tool.type === "Spade" && "Move and sell plants"}
-                                                {tool.type === "WateringCan" && "Turn seedlings into sprouts"}
-                                                {tool.type === "Fertilizer" && "Turn sprouts into plants"}
+                                                Move and sell plants
                                             </div>
                                         )}
                                     </div>
                                 );
                             })}
+                            <div
+                                className="text-xl text-white font-bold relative"
+                                onMouseEnter={() => setIsHoveringPlantCount(true)}
+                                onMouseLeave={() => setIsHoveringPlantCount(false)}
+                            >
+                                {placedSprouts.length}/{inventoryLimit}
+
+                                {isHoveringPlantCount && (
+                                    <div
+                                        className="absolute bottom-full mb-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold"
+                                        style={{
+                                            backgroundColor: "#D4A574",
+                                            border: "3px solid #8B4513",
+                                            color: "#9e4539",
+                                            boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                            imageRendering: "pixelated",
+                                        }}
+                                    >
+                                        Plants in inventory
+                                    </div>
+                                )}
+                            </div>
                         </div>
                         <div className="text-5xl text-white font-bold">5:00</div>
                     </div>
