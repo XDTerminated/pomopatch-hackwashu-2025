@@ -160,6 +160,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
     const [isPomodoroRunning, setIsPomodoroRunning] = useState(false);
     const [isBreakRunning, setIsBreakRunning] = useState(false);
     const [pomodoroCompleted, setPomodoroCompleted] = useState(false);
+    const [isClaimingReward, setIsClaimingReward] = useState(false);
 
     // Function to play sounds
     const playSound = (soundPath: string) => {
@@ -906,6 +907,18 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                         setMoney(money - fertilizerCost);
                         playSound("/Audio/fertilizerUse.mp3");
 
+                        // Optimistically decrement fertilizer_remaining
+                        setPlacedSprouts((prev) =>
+                            prev.map((s) =>
+                                s.id === hoveredSproutId
+                                    ? {
+                                          ...s,
+                                          fertilizer_remaining: Math.max(0, (s.fertilizer_remaining ?? 0) - 1),
+                                      }
+                                    : s
+                            )
+                        );
+
                         const sprout = placedSprouts.find((s) => s.id === hoveredSproutId);
                         if (sprout) {
                             const particleCount = 8;
@@ -1327,13 +1340,17 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
 
     // Claim pomodoro rewards
     const handleClaimPomodoroReward = async () => {
+        // Prevent multiple claims
+        if (isClaimingReward) return;
+        setIsClaimingReward(true);
+
         const multiplier = calculateIncomeMultiplier();
         const baseCoins = 125;
-        
+
         // Apply weather effect to income (sunny = 1.5x multiplicative)
         const weatherMultiplier = weather === "sunny" ? 1.5 : 1.0;
         const coinsEarned = Math.floor(baseCoins * multiplier * weatherMultiplier);
-        
+
         // Apply weather effect to time (rainy = 1.5x multiplicative)
         const timeMultiplier = weather === "rainy" ? 1.5 : 1.0;
         const timeToGrow = Math.floor(25 * timeMultiplier);
@@ -1359,6 +1376,13 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         // Add coins to user
         setMoney(money + coinsEarned);
         playSound("/Audio/sell.mp3");
+
+        // Cycle weather CLIENT-SIDE FIRST
+        const weatherTypes: WeatherType[] = ["sunny", "rainy", "cloudy"];
+        const currentWeatherIndex = weatherTypes.indexOf(weather);
+        const nextWeatherIndex = (currentWeatherIndex + 1) % weatherTypes.length;
+        const newWeather = weatherTypes[nextWeatherIndex];
+        setWeather(newWeather);
 
         // Update plants CLIENT-SIDE FIRST - simulate growth
         setPlacedSprouts((prev) =>
@@ -1440,6 +1464,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         setBreakTime(5 * 60);
         setIsBreakRunning(false); // Start in paused state
         setPomodoroCompleted(false);
+        setIsClaimingReward(false);
     };
 
     // Claim break reward and restart pomodoro
@@ -1550,7 +1575,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         // Restart pomodoro
         setPomodoroMode("work");
         setPomodoroTime(25 * 60);
-        setIsPomodoroRunning(false); // Start in paused state
+        setIsPomodoroRunning(true); // Start timer automatically
         setPomodoroCompleted(false);
     };
 
@@ -1647,11 +1672,33 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                 draggable={false}
                                 style={{
                                     opacity: isAttached ? 0.7 : 1,
-                                    filter: hasCollision || inUIArea ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)" : isHovered ? "brightness(1.3) saturate(0.9)" : "none",
+                                    filter: isAttached && isHoveringDollarSign ? "sepia(100%) saturate(500%) hue-rotate(60deg) brightness(1.2)" : hasCollision || inUIArea ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)" : isHovered ? "brightness(1.3) saturate(0.9)" : "none",
                                     transition: isAttached ? "none" : "all 0.3s",
                                     animation: isAttached ? "shake 0.15s ease-in-out infinite" : isNewlyPlaced ? "settle 0.4s ease-out" : "none",
                                 }}
                             />
+
+                            {/* Show sell price when hovering over dollar sign with attached plant */}
+                            {isAttached && isHoveringDollarSign && (() => {
+                                const stage = sprout.stage ?? 0;
+                                const rarity = sprout.rarity ?? 0;
+                                // Calculate sell price: base price by stage, multiplied by rarity
+                                const basePrice = stage === 1 ? 10 : stage === 2 ? 20 : 0;
+                                const rarityMultiplier = rarity === 0 ? 1 : rarity === 1 ? 2 : 3;
+                                const sellPrice = basePrice * rarityMultiplier;
+
+                                if (sellPrice > 0) {
+                                    return (
+                                        <div
+                                            className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full text-2xl font-bold text-green-400 pointer-events-none"
+                                            style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))", zIndex: 10000 }}
+                                        >
+                                            +${sellPrice}
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            })()}
                             
                             {/* Always visible icons for water/fertilizer needs */}
                             {!isAttached && stage === 0 && growthTime === null && (
@@ -1680,7 +1727,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                 })}
 
                 {/* Render tooltip for hovered plant - outside plant containers to ensure it's always on top */}
-                {hoveredSproutId && pomodoroMode === "none" && (() => {
+                {hoveredSproutId && pomodoroMode !== "work" && (() => {
                     const hoveredSprout = placedSprouts.find(s => s.id === hoveredSproutId);
                     if (!hoveredSprout) return null;
 
@@ -1881,7 +1928,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
 
                 <div className="h-full w-full flex flex-col justify-between relative z-10">
                     <div className="flex flex-row justify-between h-fit w-full p-8">
-                        <div className="flex flex-row gap-4 items-center">
+                        <div className="flex flex-row gap-4 items-start">
                             <div className="relative w-fit h-fit">
                                 <img src="/Sprites/UI/PacketUI.png" className="image-pixelated w-[300px] h-auto" alt="packet ui" draggable={false} />
                                 <ol className="absolute inset-0 flex flex-row justify-between items-center gap-3 px-10">
@@ -1903,7 +1950,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                     flexShrink: 0,
                                                 }}
                                             >
-                                                <img src={seed.image} className="w-fit h-full image-pixelated object-contain pointer-events-none" alt={`${seed.type} packet`} draggable={false} />
+                                                <img src={seed.image} className="w-fit h-full image-pixelated object-contain pointer-events-none" alt={`${seed.type} packet`} draggable={false} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3))" }} />
                                                 {seed.id === "berry" && isHovered && (
                                                     <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
                                                         <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-50%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
@@ -2022,7 +2069,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                     }}
                                                 >
                                                     <div className="h-full flex items-center justify-center">
-                                                        <img src={tool.image} className={`image-pixelated object-contain pointer-events-none ${tool.type === "Backpack" ? "w-10 h-10" : "w-fit h-full"}`} alt={`${tool.type} tool`} draggable={false} />
+                                                        <img src={tool.image} className={`image-pixelated object-contain pointer-events-none ${tool.type === "Backpack" ? "w-10 h-10" : "w-fit h-full"}`} alt={`${tool.type} tool`} draggable={false} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3))" }} />
                                                     </div>
                                                     <div className="text-sm pointer-events-none font-bold" style={{ color: "#9e4539" }}>
                                                         ${tool.price}
@@ -2037,6 +2084,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                                 color: "#9e4539",
                                                                 boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
                                                                 imageRendering: "pixelated",
+                                                                transform: "none",
+                                                                animation: "none",
                                                             }}
                                                         >
                                                             {tool.type === "WateringCan" && "Turn seedlings into sprouts"}
@@ -2049,12 +2098,10 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                         })}
                                 </ol>
                             </div>
-                        </div>
-                        <div className="flex flex-row gap-4 items-center">
-                            {/* Weather next to money */}
-                            <div className="flex flex-col items-center gap-1 relative" onMouseEnter={() => setIsHoveringWeather(true)} onMouseLeave={() => setIsHoveringWeather(false)}>
-                                <img src={getWeatherIcon()} alt={`${weather} weather`} className="image-pixelated w-12 h-12 object-contain" draggable={false} />
-                                <div className="text-base text-white font-bold capitalize">{weather}</div>
+
+                            <div className="flex flex-col items-center relative self-center mt-2" onMouseEnter={() => setIsHoveringWeather(true)} onMouseLeave={() => setIsHoveringWeather(false)}>
+                                <img src={getWeatherIcon()} alt={`${weather} weather`} className="image-pixelated w-12 h-12 object-contain" draggable={false} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3))" }} />
+                                <div className="text-base text-white font-bold capitalize" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>{weather}</div>
 
                                 {isHoveringWeather && (
                                     <div
@@ -2065,17 +2112,22 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                             color: "#9e4539",
                                             boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
                                             imageRendering: "pixelated",
+                                            transform: "none",
+                                            animation: "none",
                                         }}
                                     >
                                         {getWeatherDescription()}
                                     </div>
                                 )}
                             </div>
-                            <div className="text-5xl text-white font-bold">${Math.round(displayedMoney)}</div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                            <div className="text-5xl font-bold" style={{ color: "#cd683d", filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>{userEmail.split('@')[0]}</div>
+                            <div className="text-4xl text-white font-bold" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>${Math.round(displayedMoney)}</div>
                         </div>
                     </div>
-                    <div className="p-8 flex flex-row justify-between items-center">
-                        <div className="flex flex-row gap-4 items-center">
+                    <div className="p-8 flex flex-row justify-between items-end">
+                        <div className="flex flex-row gap-4 items-end">
                             {tools
                                 .filter((tool) => tool.type === "Spade")
                                 .map((tool) => {
@@ -2105,7 +2157,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                         pointerEvents: attachedSproutId && !showDollarSign ? "none" : "auto",
                                                     }}
                                                 >
-                                                    <img src={displayImage} className="h-12 w-auto image-pixelated object-contain pointer-events-none" draggable={false} alt={showDollarSign ? "Sell sprout" : `${tool.type} tool`} />
+                                                    <img src={displayImage} className="h-12 w-auto image-pixelated object-contain pointer-events-none" draggable={false} alt={showDollarSign ? "Sell sprout" : `${tool.type} tool`} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3))" }} />
                                                 </div>
                                             </div>
                                             {tool.price && !showDollarSign && <div className="text-base text-white font-bold">${tool.price}</div>}
@@ -2119,6 +2171,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                         color: "#9e4539",
                                                         boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
                                                         imageRendering: "pixelated",
+                                                        transform: "none",
+                                                        animation: "none",
                                                     }}
                                                 >
                                                     Move and sell plants
@@ -2138,6 +2192,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                             color: "#9e4539",
                                             boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
                                             imageRendering: "pixelated",
+                                            transform: "none",
+                                            animation: "none",
                                         }}
                                     >
                                         Plants in inventory
@@ -2145,7 +2201,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                 )}
                             </div>
                         </div>
-                        <div className="flex flex-row gap-4 items-center">
+                        <div className="flex flex-row gap-4 items-end">
                             {/* Pomodoro/Break button */}
                             {pomodoroMode === "none" && (
                                 <button
@@ -2163,33 +2219,16 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                 </button>
                             )}
 
-                            {/* Exit button during break only (work mode exit is rendered separately) */}
-                            {pomodoroMode === "break" && (
-                                <button
-                                    onClick={handleExitPomodoro}
-                                    onMouseEnter={() => playSound("/Audio/interact.mp3")}
-                                    className="px-6 py-3 text-xl font-bold text-white transition-all active:scale-95 wiggle-hover"
-                                    style={{
-                                        backgroundColor: "#D4A574",
-                                        border: "3px solid #8B4513",
-                                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
-                                        imageRendering: "pixelated",
-                                    }}
-                                >
-                                    Exit Break
-                                </button>
-                            )}
-
                             {/* Small break timer in bottom right */}
                             {pomodoroMode === "break" && (
                                 <div className="flex flex-col items-center gap-2">
-                                    <div className="text-lg font-bold text-white">Short Break</div>
-                                    <div className="text-4xl font-bold text-white">{formatTime(breakTime)}</div>
+                                    <div className="text-3xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>Short Break</div>
+                                    <div className="text-7xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>{formatTime(breakTime)}</div>
                                     {breakTime === 0 ? (
                                         <button
                                             onClick={handleClaimBreakReward}
                                             onMouseEnter={() => playSound("/Audio/interact.mp3")}
-                                            className="px-4 py-2 text-lg font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                            className="px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 wiggle-hover"
                                             style={{
                                                 backgroundColor: "#4CAF50",
                                                 border: "3px solid #2E7D32",
@@ -2200,19 +2239,35 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                             Continue ({Math.floor(25 * calculateIncomeMultiplier())} coins)
                                         </button>
                                     ) : (
-                                        <button
-                                            onClick={() => setIsBreakRunning(!isBreakRunning)}
-                                            onMouseEnter={() => playSound("/Audio/interact.mp3")}
-                                            className="px-4 py-2 text-lg font-bold text-white transition-all active:scale-95"
-                                            style={{
-                                                backgroundColor: "#D4A574",
-                                                border: "3px solid #8B4513",
-                                                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
-                                                imageRendering: "pixelated",
-                                            }}
-                                        >
-                                            {isBreakRunning ? "Pause" : "Start"}
-                                        </button>
+                                        <>
+                                            <button
+                                                onClick={() => setIsBreakRunning(!isBreakRunning)}
+                                                onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                                className="px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                                style={{
+                                                    backgroundColor: "#D4A574",
+                                                    border: "3px solid #8B4513",
+                                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                    imageRendering: "pixelated",
+                                                }}
+                                            >
+                                                {isBreakRunning ? "Pause" : "Start"}
+                                            </button>
+                                            {/* Exit Break button - centered under start/pause */}
+                                            <button
+                                                onClick={handleExitPomodoro}
+                                                onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                                className="px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 wiggle-hover mt-2"
+                                                style={{
+                                                    backgroundColor: "#D4A574",
+                                                    border: "3px solid #8B4513",
+                                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                    imageRendering: "pixelated",
+                                                }}
+                                            >
+                                                Exit Break
+                                            </button>
+                                        </>
                                     )}
                                 </div>
                             )}
@@ -2226,34 +2281,14 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                         {/* Translucent gray overlay that blocks interaction */}
                         <div
                             className="fixed inset-0"
-                            style={{ 
+                            style={{
                                 zIndex: 10003,
                                 backgroundColor: 'rgba(0, 0, 0, 0.6)',
                                 pointerEvents: 'auto',
                             }}
                             onClick={(e) => e.stopPropagation()}
                         />
-                        
-                        {/* Exit button - fixed position above overlay */}
-                        <div
-                            className="fixed bottom-8 right-8"
-                            style={{ zIndex: 10005 }}
-                        >
-                            <button
-                                onClick={handleExitPomodoro}
-                                onMouseEnter={() => playSound("/Audio/interact.mp3")}
-                                className="px-6 py-3 text-xl font-bold text-white transition-all active:scale-95 wiggle-hover"
-                                style={{
-                                    backgroundColor: "#D4A574",
-                                    border: "3px solid #8B4513",
-                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
-                                    imageRendering: "pixelated",
-                                }}
-                            >
-                                Exit Pomodoro
-                            </button>
-                        </div>
-                        
+
                         {/* Pomodoro timer display */}
                         <div
                             className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-6"
@@ -2261,12 +2296,13 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                         >
                             <div className="text-6xl font-bold text-white">Pomodoro</div>
                             <div className="text-9xl font-bold text-white">{formatTime(pomodoroTime)}</div>
-                            
+
                             {pomodoroCompleted ? (
                                 <button
                                     onClick={handleClaimPomodoroReward}
                                     onMouseEnter={() => playSound("/Audio/interact.mp3")}
-                                    className="px-8 py-4 text-3xl font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                    disabled={isClaimingReward}
+                                    className={`px-8 py-4 text-3xl font-bold text-white transition-all active:scale-95 ${isClaimingReward ? "opacity-50 cursor-not-allowed" : "wiggle-hover"}`}
                                     style={{
                                         backgroundColor: "#4CAF50",
                                         border: "3px solid #2E7D32",
@@ -2274,7 +2310,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                         imageRendering: "pixelated",
                                     }}
                                 >
-                                    Claim {Math.floor(125 * calculateIncomeMultiplier())} coins
+                                    {isClaimingReward ? "Claiming..." : `Claim ${Math.floor(125 * calculateIncomeMultiplier())} coins`}
                                 </button>
                             ) : (
                                 <button
@@ -2291,6 +2327,21 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                     {isPomodoroRunning ? "Pause" : "Start"}
                                 </button>
                             )}
+
+                            {/* Exit Pomodoro button - centered under pause/start */}
+                            <button
+                                onClick={handleExitPomodoro}
+                                onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                className="px-6 py-3 text-xl font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                style={{
+                                    backgroundColor: "#D4A574",
+                                    border: "3px solid #8B4513",
+                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                    imageRendering: "pixelated",
+                                }}
+                            >
+                                Exit Pomodoro
+                            </button>
                         </div>
                     </>
                 )}

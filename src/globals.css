@@ -64,10 +64,11 @@ body {
     transform: none !important;
 }
 
-/* Prevent tooltips from wiggling */
-.pointer-events-none {
+/* Prevent tooltips from wiggling - use fixed positioning to escape parent transforms */
+.tooltip-no-wiggle {
     animation: none !important;
     transform: none !important;
+    position: fixed !important;
 }
 
 @keyframes settle {
