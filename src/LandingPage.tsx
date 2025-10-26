@@ -39,7 +39,7 @@ export default function LandingPage() {
         />
         <button
         className="relative border-none bg-transparent p-0 flex items-center justify-center"
-        style={{ cursor: "pointer", width: "300px", height: "80px" }}
+        style={{ cursor: "pointer", width: "300px", height: "80px", marginTop: "-20px" }}
         onClick={handleSignIn}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -52,7 +52,7 @@ export default function LandingPage() {
         />
         <span
           className="relative flex items-center gap-4 text-white font-bold text-xl pointer-events-none whitespace-nowrap z-10"
-          style={{ cursor: "pointer", marginTop: isHovered ? "30px" : "-16px" }}
+          style={{ cursor: "pointer", marginTop: isHovered ? "22px" : "-24px" }}
         >
           <img
             src="/Sprites/UI/google.png"

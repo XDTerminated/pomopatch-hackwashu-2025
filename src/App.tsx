@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from "react";
+import { useState, useEffect, memo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./globals.css";
 import { apiService, Plant } from "./api";
@@ -40,6 +40,7 @@ interface AppProps {
     initialPlants?: Plant[];
     userEmail: string;
     getAuthToken: () => Promise<string | null>;
+    onSignOut: () => Promise<void>;
 }
 
 interface CoinParticle {
@@ -102,14 +103,16 @@ const Rain = memo(({ rainDrops }: { rainDrops: RainDrop[] }) => {
     );
 });
 
-function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, initialPlants = [], userEmail, getAuthToken }: AppProps) {
+function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, initialPlants = [], userEmail, getAuthToken, onSignOut }: AppProps) {
     const [greetMsg, setGreetMsg] = useState("");
     const [name, setName] = useState("");
     const [draggedSeed, setDraggedSeed] = useState<SeedPacket | null>(null);
     const [draggedTool, setDraggedTool] = useState<Tool | null>(null);
     const [isDraggingOverBackground, setIsDraggingOverBackground] = useState(false);
     const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
-    const [money, setMoney] = useState(initialMoney);
+    const [potentialDraggedSeed, setPotentialDraggedSeed] = useState<SeedPacket | null>(null);
+    const [mouseDownPos, setMouseDownPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+    const [money, setMoney] = useState(() => initialMoney ?? 100);
     const [placedSprouts, setPlacedSprouts] = useState<PlacedSprout[]>(() => {
         // Convert backend plants to PlacedSprouts
         const centerX = window.innerWidth / 2;
@@ -138,17 +141,20 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
     const [newlyPlacedSproutId, setNewlyPlacedSproutId] = useState<string | null>(null);
     const [lastCursorPosition, setLastCursorPosition] = useState({ x: 0, y: 0 });
     const [wobbleAudio, setWobbleAudio] = useState<HTMLAudioElement | null>(null);
+    const weatherAudioRef = useRef<HTMLAudioElement | null>(null);
     const [rainDrops, setRainDrops] = useState<RainDrop[]>([]);
     const [weather, setWeather] = useState<WeatherType>(() => {
-        const weatherTypes: WeatherType[] = ["sunny", "rainy", "cloudy"];
-        return weatherTypes[initialWeather] || "sunny";
+        const weatherTypes: WeatherType[] = ["cloudy", "rainy", "sunny"];
+        const weatherIndex = initialWeather ?? 0;
+        console.log("🌤️ Initializing weather:", { initialWeather, weatherIndex, result: weatherTypes[weatherIndex] });
+        return weatherTypes[weatherIndex];
     });
     const [toolParticles, setToolParticles] = useState<ToolParticle[]>([]);
     const [hoveredPacketId, setHoveredPacketId] = useState<string | null>(null);
     const [customCursorPosition, setCustomCursorPosition] = useState({ x: 0, y: 0 });
     const [isHoveringWeather, setIsHoveringWeather] = useState(false);
     const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
-    const [displayedMoney, setDisplayedMoney] = useState(initialMoney);
+    const [displayedMoney, setDisplayedMoney] = useState(() => initialMoney ?? 100);
     const [inventoryLimit, setInventoryLimit] = useState(initialPlantLimit);
     const [isHoveringPlantCount, setIsHoveringPlantCount] = useState(false);
     const [lightning, setLightning] = useState<Lightning | null>(null);
@@ -161,6 +167,35 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
     const [isBreakRunning, setIsBreakRunning] = useState(false);
     const [pomodoroCompleted, setPomodoroCompleted] = useState(false);
     const [isClaimingReward, setIsClaimingReward] = useState(false);
+    const [pomodoroCount, setPomodoroCount] = useState(0); // Track number of completed pomodoros
+    const [currentPomodoroNumber, setCurrentPomodoroNumber] = useState(1); // Current pomodoro being worked on
+    const [currentBreakNumber, setCurrentBreakNumber] = useState(0); // Current break number
+
+    // State for click-to-select functionality (alternative to dragging)
+    const [selectedSeed, setSelectedSeed] = useState<SeedPacket | null>(null);
+    const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
+
+    // State for tracking current variety shown in seed packet previews
+    const [currentVarietyIndices, setCurrentVarietyIndices] = useState<Record<string, number>>({});
+
+    // Plant varieties configuration - easily add new plants to any family/rarity
+    const plantVarieties: Record<string, { rarity: number; chance: number; varieties: string[] }[]> = {
+        berry: [
+            { rarity: 0, chance: 79, varieties: ["blueberry"] },
+            { rarity: 1, chance: 20, varieties: ["strawberry"] },
+            { rarity: 2, chance: 1, varieties: ["ancient_fruit"] },
+        ],
+        fungi: [
+            { rarity: 0, chance: 79, varieties: ["brown_mushroom"] },
+            { rarity: 1, chance: 20, varieties: ["red_mushroom"] },
+            { rarity: 2, chance: 1, varieties: ["mario_mushroom"] },
+        ],
+        rose: [
+            { rarity: 0, chance: 79, varieties: ["red_rose"] },
+            { rarity: 1, chance: 20, varieties: ["pink_rose", "white_rose"] }, // Multiple varieties swap
+            { rarity: 2, chance: 1, varieties: ["withered_rose"] },
+        ],
+    };
 
     // Function to play sounds
     const playSound = (soundPath: string) => {
@@ -195,6 +230,17 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         }
 
         console.log("Starting rain audio...");
+        // Stop any existing weather audio to avoid overlap
+        if (weatherAudioRef.current) {
+            try {
+                weatherAudioRef.current.pause();
+                weatherAudioRef.current.currentTime = 0;
+            } catch (e) {
+                console.warn("Failed to stop previous weather audio:", e);
+            }
+            weatherAudioRef.current = null;
+        }
+
         const audio = new Audio("/Audio/rain.mp3");
         audio.loop = true;
         audio.volume = 0;
@@ -205,6 +251,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
             playPromise
                 .then(() => {
                     console.log("Rain audio started successfully");
+                    // Remember this audio as the current weather audio
+                    weatherAudioRef.current = audio;
                     // Fade in to 0.25 volume (half as loud)
                     let fadeInInterval = setInterval(() => {
                         if (audio.volume < 0.25) {
@@ -246,6 +294,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                 } else {
                     audio.pause();
                     audio.currentTime = 0;
+                    // Clear reference when stopped
+                    if (weatherAudioRef.current === audio) weatherAudioRef.current = null;
                     clearInterval(fadeOutInterval);
                 }
             }, 50);
@@ -261,6 +311,17 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         }
 
         console.log("Starting birds audio...");
+        // Stop any existing weather audio to avoid overlap
+        if (weatherAudioRef.current) {
+            try {
+                weatherAudioRef.current.pause();
+                weatherAudioRef.current.currentTime = 0;
+            } catch (e) {
+                console.warn("Failed to stop previous weather audio:", e);
+            }
+            weatherAudioRef.current = null;
+        }
+
         const audio = new Audio("/Audio/birds.mp3");
         audio.loop = true;
         audio.volume = 0;
@@ -271,6 +332,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
             playPromise
                 .then(() => {
                     console.log("Birds audio started successfully");
+                    // Remember this audio as the current weather audio
+                    weatherAudioRef.current = audio;
                     // Fade in to 1.0 volume
                     let fadeInInterval = setInterval(() => {
                         if (audio.volume < 1.0) {
@@ -312,6 +375,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                 } else {
                     audio.pause();
                     audio.currentTime = 0;
+                    if (weatherAudioRef.current === audio) weatherAudioRef.current = null;
                     clearInterval(fadeOutInterval);
                 }
             }, 50);
@@ -334,6 +398,17 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
             if (isCleanedUp) return;
 
             console.log("Playing wind audio...");
+            // Stop any existing weather audio to avoid overlap
+            if (weatherAudioRef.current) {
+                try {
+                    weatherAudioRef.current.pause();
+                    weatherAudioRef.current.currentTime = 0;
+                } catch (e) {
+                    console.warn("Failed to stop previous weather audio:", e);
+                }
+                weatherAudioRef.current = null;
+            }
+
             const audio = new Audio("/Audio/wind.mp3");
             audio.volume = 0;
             currentAudio = audio;
@@ -351,6 +426,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                         }
                     }, 50);
 
+                    // Remember this audio as the current weather audio
+                    weatherAudioRef.current = audio;
+
                     audio.addEventListener("ended", () => {
                         currentAudio = null;
                         if (!isCleanedUp) {
@@ -360,7 +438,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                     });
                 })
                 .catch((error) => {
-                    console.error("Wind audio play failed:", error);
+                            console.error("Wind audio play failed:", error);
                     const enableAudio = () => {
                         audio
                             .play()
@@ -397,6 +475,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                         if (currentAudio) {
                             currentAudio.pause();
                             currentAudio.currentTime = 0;
+                            if (weatherAudioRef.current === currentAudio) weatherAudioRef.current = null;
                         }
                         clearInterval(fadeOutInterval);
                     }
@@ -462,8 +541,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         const difference = money - displayedMoney;
         if (difference === 0) return;
 
-        const duration = 500;
-        const steps = 20;
+        // Speed up money animation for snappier feedback
+        const duration = 300; // total ms
+        const steps = 12;
         const stepValue = difference / steps;
         const stepDuration = duration / steps;
 
@@ -554,6 +634,30 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
             return () => clearInterval(interval);
         }
     }, [pomodoroMode, isBreakRunning, breakTime]);
+
+    // Swap plant varieties in seed packet previews every second when hovering
+    useEffect(() => {
+        if (!hoveredPacketId) return;
+
+        const interval = setInterval(() => {
+            const varieties = plantVarieties[hoveredPacketId];
+            if (!varieties) return;
+
+            setCurrentVarietyIndices((prev) => {
+                const newIndices = { ...prev };
+                varieties.forEach((rarityGroup, rarityIndex) => {
+                    if (rarityGroup.varieties.length > 1) {
+                        const key = `${hoveredPacketId}-${rarityIndex}`;
+                        const currentIndex = prev[key] || 0;
+                        newIndices[key] = (currentIndex + 1) % rarityGroup.varieties.length;
+                    }
+                });
+                return newIndices;
+            });
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [hoveredPacketId, plantVarieties]);
 
     const seedPackets: SeedPacket[] = [
         {
@@ -653,15 +757,39 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
     }
 
     const handleSeedMouseDown = (seed: SeedPacket) => (e: React.MouseEvent) => {
-        console.log("🌱 Mouse down on seed:", seed.type);
-        setDraggedSeed(seed);
+        console.log("🌱 Mouse down on seed (potential drag):", seed.type);
+        e.stopPropagation(); // Prevent event bubbling
+        // Don't immediately mark as dragging; record potential drag and mouse down position/time
+        setPotentialDraggedSeed(seed);
+        setMouseDownPos({ x: e.clientX, y: e.clientY });
         setDragPosition({ x: e.clientX, y: e.clientY });
-        setIsDraggingOverBackground(true);
         setMouseDownTime(Date.now());
+    };
+
+    const handleSeedClick = (seed: SeedPacket) => (e: React.MouseEvent) => {
+        e.stopPropagation();
+        console.log("🌱 Click on seed:", seed.type);
+        
+        // Don't select if we're dragging
+        const timeSinceMouseDown = Date.now() - mouseDownTime;
+        if (timeSinceMouseDown > 150) {
+            return; // This was a drag, not a click
+        }
+        
+        // Toggle selection: if already selected, deselect; otherwise select
+        if (selectedSeed?.id === seed.id) {
+            setSelectedSeed(null);
+            setSelectedTool(null);
+        } else {
+            setSelectedSeed(seed);
+            setSelectedTool(null);
+            playSound("/Audio/interact.mp3");
+        }
     };
 
     const handleToolMouseDown = (tool: Tool) => (e: React.MouseEvent) => {
         console.log("🔧 Mouse down on tool:", tool.type);
+        e.stopPropagation(); // Prevent event bubbling
         setDraggedTool(tool);
         setDragPosition({ x: e.clientX, y: e.clientY });
         setMouseDownTime(Date.now());
@@ -672,6 +800,33 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
             playSound("/Audio/wateringcan.mp3");
         } else if (tool.type === "Fertilizer") {
             playSound("/Audio/fertilizerDrag.mp3");
+        }
+    };
+
+    const handleToolClick = (tool: Tool) => (e: React.MouseEvent) => {
+        e.stopPropagation();
+        console.log("🔧 Click on tool:", tool.type);
+        
+        // Don't select if we're dragging
+        const timeSinceMouseDown = Date.now() - mouseDownTime;
+        if (timeSinceMouseDown > 150) {
+            return; // This was a drag, not a click
+        }
+        
+        // Toggle selection: if already selected, deselect; otherwise select
+        if (selectedTool?.id === tool.id) {
+            setSelectedTool(null);
+            setSelectedSeed(null);
+        } else {
+            setSelectedTool(tool);
+            setSelectedSeed(null);
+            if (tool.type === "Spade") {
+                playSound("/Audio/spadeclink.mp3");
+            } else if (tool.type === "WateringCan") {
+                playSound("/Audio/wateringcan.mp3");
+            } else if (tool.type === "Fertilizer") {
+                playSound("/Audio/fertilizerDrag.mp3");
+            }
         }
     };
 
@@ -694,10 +849,10 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
     };
 
     const isInUIArea = (x: number, y: number): boolean => {
-        if (y < 200 && x < 450) return true;
-        if (y < 200 && x > window.innerWidth - 350) return true;
-        if (y > window.innerHeight - 200 && x < 550) return true;
-        if (y > window.innerHeight - 200 && x > window.innerWidth - 350) return true;
+        // Top strip - full width
+        if (y < 200) return true;
+        // Bottom strip - full width
+        if (y > window.innerHeight - 200) return true;
         return false;
     };
 
@@ -735,6 +890,18 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                 setLastCursorPosition(newPosition);
             }
             return;
+        }
+
+        // If the user pressed down on a seed and moved enough, convert potential drag -> actual drag
+        if (potentialDraggedSeed) {
+            const dx = Math.abs(newPosition.x - mouseDownPos.x);
+            const dy = Math.abs(newPosition.y - mouseDownPos.y);
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance > 6) {
+                setDraggedSeed(potentialDraggedSeed);
+                setPotentialDraggedSeed(null);
+                setIsDraggingOverBackground(true);
+            }
         }
 
         if (draggedSeed) {
@@ -778,8 +945,11 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                     };
 
                     setPlacedSprouts([...placedSprouts, newSprout]);
-                    setMoney(currentMoney - draggedSeed.price);
+                    const optimisticMoney = currentMoney - draggedSeed.price;
+                    setMoney(optimisticMoney);
                     playSound("/Audio/placingPlant.mp3");
+                    // If a seed was previously selected (click-to-place), clear it to avoid duplicate placement
+                    setSelectedSeed(null);
 
                     const particleCount = 5;
                     const newTrails: TrailParticle[] = [];
@@ -840,7 +1010,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                         : s
                                 )
                             );
-                            setMoney(response.new_balance);
+                            // Prefer backend value when present; otherwise keep optimistic client-side deduction
+                            setMoney(response.new_balance ?? optimisticMoney);
                         })
                         .catch((error) => {
                             console.error("Failed to create plant:", error);
@@ -899,25 +1070,26 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                         }
 
                         const fertilizerCost = draggedTool.price || 25;
-                        const currentMoney = money;
+                        const currentMoney = money ?? 0;
 
-                        console.log("🌿 Fertilizing plant:", { plantId, currentMoney: money, fertilizerCost, newMoney: money - fertilizerCost, fertilizerRemaining, growthTimeRemaining });
+                        console.log("🌿 Fertilizing plant:", { plantId, currentMoney, fertilizerCost, newMoney: currentMoney - fertilizerCost, fertilizerRemaining, growthTimeRemaining });
 
-                        // Optimistic update - update client side first for instant feedback
-                        setMoney(money - fertilizerCost);
-                        playSound("/Audio/fertilizerUse.mp3");
-
-                        // Optimistically decrement fertilizer_remaining
+                        // Client-side update first - deduct money and update plant state
+                        setMoney(currentMoney - fertilizerCost);
+                        const newFertilizerRemaining = Math.max(0, (fertilizerRemaining ?? 0) - 1);
+                        const shouldStartGrowing = newFertilizerRemaining === 0;
                         setPlacedSprouts((prev) =>
                             prev.map((s) =>
                                 s.id === hoveredSproutId
                                     ? {
                                           ...s,
-                                          fertilizer_remaining: Math.max(0, (s.fertilizer_remaining ?? 0) - 1),
+                                          fertilizer_remaining: newFertilizerRemaining,
+                                          growth_time_remaining: shouldStartGrowing ? (s.rarity === 0 ? 60 : s.rarity === 1 ? 120 : 360) : s.growth_time_remaining,
                                       }
                                     : s
                             )
                         );
+                        playSound("/Audio/fertilizerUse.mp3");
 
                         const sprout = placedSprouts.find((s) => s.id === hoveredSproutId);
                         if (sprout) {
@@ -955,12 +1127,12 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                     .applyFertilizer(userEmail, plantId, token)
                                     .then((response) => {
                                         console.log("🌿 Fertilizer applied successfully:", response);
-                                        // Update local plant state with backend response - preserve ALL properties
+                                        // Sync with backend response - update any fields that differ
                                         setPlacedSprouts((prev) =>
                                             prev.map((s) =>
                                                 s.id === hoveredId
                                                     ? {
-                                                          ...s, // Keep all existing properties (x, y, seedType, species, rarity, etc.)
+                                                          ...s,
                                                           stage: response.stage ?? s.stage,
                                                           growth_time_remaining: response.growth_time_remaining ?? s.growth_time_remaining,
                                                           fertilizer_remaining: response.fertilizer_remaining ?? s.fertilizer_remaining,
@@ -970,12 +1142,26 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                     : s
                                             )
                                         );
-                                        setMoney(response.new_money ?? money);
+                                        // Use backend money if available
+                                        if (response.new_money !== undefined) {
+                                            setMoney(response.new_money);
+                                        }
                                     })
                                     .catch((error) => {
                                         console.error("❌ Failed to apply fertilizer:", error);
                                         // Rollback on error
                                         setMoney(currentMoney);
+                                        setPlacedSprouts((prev) =>
+                                            prev.map((s) =>
+                                                s.id === hoveredId
+                                                    ? {
+                                                          ...s,
+                                                          fertilizer_remaining: fertilizerRemaining,
+                                                          growth_time_remaining: growthTimeRemaining,
+                                                      }
+                                                    : s
+                                            )
+                                        );
                                         playSound("/Audio/error.mp3");
                                     });
                             }
@@ -1008,12 +1194,15 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                         }
 
                         const waterCost = draggedTool.price || 25;
-                        const currentMoney = money;
+                        const currentMoney = money ?? 0;
 
-                        console.log("💧 Watering plant:", { plantId, currentMoney: money, waterCost, newMoney: money - waterCost });
+                        console.log("💧 Watering plant:", { plantId, currentMoney, waterCost, newMoney: currentMoney - waterCost });
 
-                        // Optimistic update - only update money, will update plant from backend response
-                        setMoney(money - waterCost);
+                        // Client-side update first - deduct money and update plant state
+                        setMoney(currentMoney - waterCost);
+                        setPlacedSprouts((prev) =>
+                            prev.map((s) => (s.id === hoveredSproutId ? { ...s, growth_time_remaining: 30 } : s))
+                        );
                         playSound("/Audio/wateringcanuse.mp3");
 
                         const sprout = placedSprouts.find((s) => s.id === hoveredSproutId);
@@ -1052,12 +1241,12 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                     .applyWater(userEmail, plantId, token)
                                     .then((response) => {
                                         console.log("💧 Water applied successfully:", response);
-                                        // Update with actual backend values to ensure sync - preserve ALL properties
+                                        // Sync with backend response - update any fields that differ
                                         setPlacedSprouts((prev) =>
                                             prev.map((s) =>
                                                 s.id === hoveredId
                                                     ? {
-                                                          ...s, // Keep all existing properties (x, y, seedType, species, rarity, etc.)
+                                                          ...s,
                                                           stage: response.stage ?? s.stage,
                                                           growth_time_remaining: response.growth_time_remaining ?? s.growth_time_remaining,
                                                           fertilizer_remaining: response.fertilizer_remaining ?? s.fertilizer_remaining,
@@ -1067,7 +1256,10 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                     : s
                                             )
                                         );
-                                        setMoney(response.new_money ?? money);
+                                        // Use backend money if available
+                                        if (response.new_money !== undefined) {
+                                            setMoney(response.new_money);
+                                        }
                                     })
                                     .catch((error) => {
                                         console.error("❌ Failed to apply water:", error);
@@ -1075,7 +1267,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                         setMoney(currentMoney);
                                         setPlacedSprouts((prev) =>
                                             prev.map((s) =>
-                                                s.id === hoveredSproutId
+                                                s.id === hoveredId
                                                     ? {
                                                           ...s,
                                                           growth_time_remaining: null,
@@ -1090,7 +1282,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                     }
                 } else {
                     // Only play error sound if we're not dropping the tool after using shovel to move/sell a plant
-                    if (!attachedSproutId) {
+                    // AND if this was actually a drag (not just a click to select)
+                    const timeSinceMouseDown = Date.now() - mouseDownTime;
+                    if (!attachedSproutId && timeSinceMouseDown > 150) {
                         playSound("/Audio/error.mp3");
                     }
                 }
@@ -1100,6 +1294,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
             setDraggedTool(null);
             setIsDraggingOverBackground(false);
             setHoveredSproutId(null);
+            // clear any potential drag state from quick clicks
+            setPotentialDraggedSeed(null);
         }
     };
 
@@ -1110,7 +1306,289 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
             timeSinceMouseDown,
             timeSinceSproutAttached,
             attachedSproutId,
+            selectedSeed,
+            selectedTool,
         });
+
+        // Handle click-to-place for selected seed
+        if (selectedSeed && !attachedSproutId) {
+            console.log("🌱 Placing selected seed:", selectedSeed.type);
+            if (money >= selectedSeed.price) {
+                const hasCollision = checkCollision(e.clientX, e.clientY);
+                const inUIArea = isInUIArea(e.clientX, e.clientY);
+                const inventoryFull = placedSprouts.length >= inventoryLimit;
+
+                if (!hasCollision && !inUIArea && !inventoryFull) {
+                    const centerX = window.innerWidth / 2;
+                    const centerY = window.innerHeight / 2;
+                    const relativeX = e.clientX - centerX;
+                    const relativeY = centerY - e.clientY;
+                    const currentMoney = money;
+
+                    const tempSproutId = `temp-plant-${Date.now()}`;
+                    const newSprout = {
+                        id: tempSproutId,
+                        x: e.clientX,
+                        y: e.clientY,
+                        seedType: selectedSeed.type,
+                        stage: 0,
+                        growth_time_remaining: null,
+                    };
+
+                    setPlacedSprouts([...placedSprouts, newSprout]);
+                    const optimisticMoney = currentMoney - selectedSeed.price;
+                    setMoney(optimisticMoney);
+                    setSelectedSeed(null); // Deselect after placing
+                    playSound("/Audio/placingPlant.mp3");
+
+                    const particleCount = 5;
+                    const newTrails: TrailParticle[] = [];
+                    for (let i = 0; i < particleCount; i++) {
+                        const angle = (Math.PI * 2 * i) / particleCount;
+                        const distance = 20 + Math.random() * 20;
+                        const offsetX = Math.cos(angle) * distance;
+                        const offsetY = Math.sin(angle) * distance;
+                        const trailId = `plant-${Date.now()}-${i}`;
+                        const size = Math.floor(Math.random() * 3) + 3;
+
+                        newTrails.push({
+                            id: trailId,
+                            x: e.clientX + offsetX,
+                            y: e.clientY + offsetY,
+                            size: size,
+                        });
+
+                        setTimeout(() => {
+                            setTrailParticles((prev) => prev.filter((t) => t.id !== trailId));
+                        }, 500);
+                    }
+                    setTrailParticles((prev) => [...prev, ...newTrails]);
+
+                    setNewlyPlacedSproutId(tempSproutId);
+                    setTimeout(() => setNewlyPlacedSproutId(null), 400);
+
+                    getAuthToken()
+                        .then((token) => {
+                            if (!token) throw new Error("Failed to get auth token");
+                            return apiService.createPlant(
+                                userEmail,
+                                {
+                                    plant_type: selectedSeed.type.toLowerCase(),
+                                    x: relativeX,
+                                    y: relativeY,
+                                },
+                                token
+                            );
+                        })
+                        .then((response) => {
+                            const realSproutId = `plant-${response.plant_id}`;
+                            console.log("✅ Plant created successfully:", response);
+                            setPlacedSprouts((prev) =>
+                                prev.map((s) =>
+                                    s.id === tempSproutId
+                                        ? {
+                                              ...s,
+                                              id: realSproutId,
+                                              stage: response.stage ?? s.stage,
+                                              species: response.plant_species ?? s.species,
+                                              rarity: response.rarity ?? s.rarity,
+                                              growth_time_remaining: response.growth_time_remaining ?? s.growth_time_remaining,
+                                              fertilizer_remaining: response.fertilizer_remaining ?? s.fertilizer_remaining,
+                                          }
+                                        : s
+                                )
+                            );
+                            // Use backend balance if available, otherwise keep optimistic value
+                            setMoney(response.new_balance ?? optimisticMoney);
+                        })
+                        .catch((error) => {
+                            console.error("Failed to create plant:", error);
+                            setPlacedSprouts((prev) => prev.filter((s) => s.id !== tempSproutId));
+                            setMoney(currentMoney);
+                            playSound("/Audio/error.mp3");
+                        });
+                } else {
+                    // Invalid placement - deselect and play error
+                    setSelectedSeed(null);
+                    playSound("/Audio/error.mp3");
+                }
+            } else {
+                // Can't afford - deselect and play error
+                setSelectedSeed(null);
+                playSound("/Audio/error.mp3");
+            }
+            return;
+        }
+
+        // Handle click-to-use for selected tool
+        if (selectedTool && !attachedSproutId) {
+            console.log("🔧 Using selected tool:", selectedTool.type);
+            const sproutId = findSproutAtPosition(e.clientX, e.clientY);
+
+            if (sproutId) {
+                const sprout = placedSprouts.find((s) => s.id === sproutId);
+                if (!sprout) return;
+
+                const plantIdStr = sproutId.replace("plant-", "").replace("temp-plant-", "");
+                const plantId = parseInt(plantIdStr);
+
+                if (selectedTool.type === "Spade") {
+                    // Pick up plant with spade
+                    setAttachedSproutId(sproutId);
+                    setSproutAttachedTime(Date.now());
+                    setSelectedTool(null); // Deselect after using
+                    playSound("/Audio/wobble.mp3");
+                } else if (selectedTool.type === "WateringCan") {
+                    // Water the plant
+                    if (!isNaN(plantId) && !sproutId.startsWith("temp-")) {
+                        if (money >= 25) {
+                            const currentStage = sprout.stage ?? 0;
+                            if (currentStage === 0 && sprout.growth_time_remaining === null) {
+                                // Update client-side first (capture previous money for rollback)
+                                const prevMoney = money;
+                                setMoney(prevMoney - 25);
+                                setPlacedSprouts((prev) =>
+                                    prev.map((s) => (s.id === sproutId ? { ...s, growth_time_remaining: 30 } : s))
+                                );
+                                setSelectedTool(null); // Deselect after using
+
+                                const particleCount = 8;
+                                const newParticles: ToolParticle[] = [];
+                                for (let i = 0; i < particleCount; i++) {
+                                    const angle = (Math.PI * 2 * i) / particleCount + Math.random() * 0.3;
+                                    const velocity = 2 + Math.random() * 2;
+                                    newParticles.push({
+                                        id: `water-${Date.now()}-${i}`,
+                                        x: sprout.x,
+                                        y: sprout.y - 20,
+                                        size: 4 + Math.random() * 4,
+                                        color: "rgba(100, 149, 237, 0.8)",
+                                        velocityX: Math.cos(angle) * velocity,
+                                        velocityY: Math.sin(angle) * velocity,
+                                    });
+                                }
+                                setToolParticles((prev) => [...prev, ...newParticles]);
+                                // Use the watering can use sound for both drag and click flows
+                                playSound("/Audio/wateringcanuse.mp3");
+
+                                getAuthToken()
+                                    .then((token) => {
+                                        if (!token) throw new Error("Failed to get auth token");
+                                        return apiService.applyWater(userEmail, plantId, token);
+                                    })
+                                    .then((response) => {
+                                        console.log("💧 Water response:", response);
+                                        setPlacedSprouts((prev) =>
+                                            prev.map((s) =>
+                                                s.id === sproutId
+                                                    ? {
+                                                          ...s,
+                                                          growth_time_remaining: response.growth_time_remaining ?? s.growth_time_remaining,
+                                                      }
+                                                    : s
+                                            )
+                                        );
+                                        // If server reports new balance, use it; otherwise keep optimistic value
+                                        setMoney(response.new_balance ?? (prevMoney - 25));
+                                    })
+                                    .catch((error) => {
+                                        console.error("❌ Failed to water plant:", error);
+                                        // Rollback optimistic update
+                                        setMoney(prevMoney);
+                                        playSound("/Audio/error.mp3");
+                                    });
+                            } else {
+                                playSound("/Audio/error.mp3");
+                            }
+                        } else {
+                            playSound("/Audio/error.mp3");
+                        }
+                    }
+                } else if (selectedTool.type === "Fertilizer") {
+                    // Apply fertilizer
+                    if (!isNaN(plantId) && !sproutId.startsWith("temp-")) {
+                        if (money >= 25) {
+                            const currentStage = sprout.stage ?? 0;
+                            const fertilizerNeeded = (sprout.fertilizer_remaining ?? 0) > 0;
+
+                            if (currentStage === 1 && fertilizerNeeded && sprout.growth_time_remaining === null) {
+                                // Update client-side first (capture previous money for rollback)
+                                const prevMoney = money;
+                                setMoney(prevMoney - 25);
+                                const newFertilizerRemaining = Math.max(0, (sprout.fertilizer_remaining ?? 0) - 1);
+                                const shouldStartGrowing = newFertilizerRemaining === 0;
+                                setPlacedSprouts((prev) =>
+                                    prev.map((s) =>
+                                        s.id === sproutId
+                                            ? {
+                                                  ...s,
+                                                  fertilizer_remaining: newFertilizerRemaining,
+                                                  growth_time_remaining: shouldStartGrowing ? (sprout.rarity === 0 ? 60 : sprout.rarity === 1 ? 120 : 360) : s.growth_time_remaining,
+                                              }
+                                            : s
+                                    )
+                                );
+                                setSelectedTool(null); // Deselect after using
+
+                                const particleCount = 8;
+                                const newParticles: ToolParticle[] = [];
+                                for (let i = 0; i < particleCount; i++) {
+                                    const angle = (Math.PI * 2 * i) / particleCount + Math.random() * 0.3;
+                                    const velocity = 2 + Math.random() * 2;
+                                    newParticles.push({
+                                        id: `fertilizer-${Date.now()}-${i}`,
+                                        x: sprout.x,
+                                        y: sprout.y - 20,
+                                        size: 4 + Math.random() * 4,
+                                        color: "rgba(139, 69, 19, 0.8)",
+                                        velocityX: Math.cos(angle) * velocity,
+                                        velocityY: Math.sin(angle) * velocity,
+                                    });
+                                }
+                                setToolParticles((prev) => [...prev, ...newParticles]);
+                                playSound("/Audio/fertilizerUse.mp3");
+
+                                getAuthToken()
+                                    .then((token) => {
+                                        if (!token) throw new Error("Failed to get auth token");
+                                        return apiService.applyFertilizer(userEmail, plantId, token);
+                                    })
+                                    .then((response) => {
+                                        console.log("🌿 Fertilizer response:", response);
+                                        setPlacedSprouts((prev) =>
+                                            prev.map((s) =>
+                                                s.id === sproutId
+                                                    ? {
+                                                          ...s,
+                                                          fertilizer_remaining: response.fertilizer_remaining ?? s.fertilizer_remaining,
+                                                          growth_time_remaining: response.growth_time_remaining ?? s.growth_time_remaining,
+                                                      }
+                                                    : s
+                                            )
+                                        );
+                                        // Use server balance if provided, otherwise keep optimistic deduction
+                                        setMoney(response.new_balance ?? (prevMoney - 25));
+                                    })
+                                    .catch((error) => {
+                                        console.error("❌ Failed to apply fertilizer:", error);
+                                        // Rollback optimistic update
+                                        setMoney(prevMoney);
+                                        playSound("/Audio/error.mp3");
+                                    });
+                            } else {
+                                playSound("/Audio/error.mp3");
+                            }
+                        } else {
+                            playSound("/Audio/error.mp3");
+                        }
+                    }
+                }
+            } else {
+                // Clicked on empty space with tool selected - deselect
+                setSelectedTool(null);
+            }
+            return;
+        }
 
         if (attachedSproutId && timeSinceSproutAttached < 200) {
             console.log("❌ Ignoring click - sprout was just attached");
@@ -1138,6 +1616,13 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
 
                     console.log("💰 Selling plant:", { plantId, plantStage });
 
+                    // Calculate sell price client-side
+                    const stage = sproutToSell.stage ?? 0;
+                    const rarity = sproutToSell.rarity ?? 0;
+                    const basePrice = stage === 1 ? 10 : stage === 2 ? 20 : 0;
+                    const rarityMultiplier = rarity === 0 ? 1 : rarity === 1 ? 2 : 3;
+                    const sellPrice = basePrice * rarityMultiplier;
+
                     if (plantStage > 0) {
                         const newCoins: CoinParticle[] = [];
                         for (let i = 0; i < 5; i++) {
@@ -1156,12 +1641,15 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                         }, 1000);
                     }
 
+                    // Client-side update first
+                    const prevMoney = money;
+                    setMoney(prevMoney + sellPrice);
                     setPlacedSprouts(placedSprouts.filter((s) => s.id !== attachedSproutId));
                     setAttachedSproutId(null);
                     setIsHoveringDollarSign(false);
                     playSound("/Audio/sell.mp3");
 
-                    // Get fresh token before API call
+                    // Then sync with backend
                     getAuthToken()
                         .then((token) => {
                             if (!token) throw new Error("Failed to get auth token");
@@ -1169,10 +1657,15 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                         })
                         .then((response) => {
                             console.log("💰 Sell response:", response);
-                            setMoney(response.new_balance);
+                            // Use backend balance if available
+                            if (response.new_balance !== undefined) {
+                                setMoney(response.new_balance);
+                            }
                         })
                         .catch((error) => {
                             console.error("❌ Failed to sell plant:", error);
+                            // Rollback on error
+                            setMoney(prevMoney);
                             playSound("/Audio/error.mp3");
                         });
                 }
@@ -1240,6 +1733,12 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                 }
             } else {
                 playSound("/Audio/error.mp3");
+            }
+        } else {
+            // Clicked on empty space - deselect any selected items
+            if (selectedSeed || selectedTool) {
+                setSelectedSeed(null);
+                setSelectedTool(null);
             }
         }
     };
@@ -1324,8 +1823,11 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
     const handleStartPomodoro = () => {
         setPomodoroMode("work");
         setPomodoroTime(25 * 60);
-        setIsPomodoroRunning(false); // Start in paused state
+        setIsPomodoroRunning(true); // Auto-start timer
         setPomodoroCompleted(false);
+        setPomodoroCount(0); // Reset counter on new session
+        setCurrentPomodoroNumber(1); // Start at Pomodoro #1
+        setCurrentBreakNumber(0); // Reset break counter
     };
 
     // Exit pomodoro session (no rewards)
@@ -1336,6 +1838,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         setIsPomodoroRunning(false);
         setIsBreakRunning(false);
         setPomodoroCompleted(false);
+        // Don't reset counters here - they'll reset on next Start Pomodoro
     };
 
     // Claim pomodoro rewards
@@ -1377,11 +1880,12 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         setMoney(money + coinsEarned);
         playSound("/Audio/sell.mp3");
 
-        // Cycle weather CLIENT-SIDE FIRST
-        const weatherTypes: WeatherType[] = ["sunny", "rainy", "cloudy"];
+        // Cycle weather CLIENT-SIDE FIRST (cloudy -> rainy -> sunny -> repeat)
+        const weatherTypes: WeatherType[] = ["cloudy", "rainy", "sunny"];
         const currentWeatherIndex = weatherTypes.indexOf(weather);
         const nextWeatherIndex = (currentWeatherIndex + 1) % weatherTypes.length;
         const newWeather = weatherTypes[nextWeatherIndex];
+        console.log("🌤️ Cycling weather:", { from: weather, to: newWeather });
         setWeather(newWeather);
 
         // Update plants CLIENT-SIDE FIRST - simulate growth
@@ -1434,7 +1938,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
             const token = await getAuthToken();
             if (!token) throw new Error("Failed to get auth token");
 
-            // Grow all plants on backend
+            // Run all backend syncs independently so one failure doesn't block others
             const growPromises = placedSprouts
                 .filter((sprout) => !sprout.id.startsWith("temp-"))
                 .map(async (sprout) => {
@@ -1445,32 +1949,51 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                     return null;
                 });
 
-            await Promise.all(growPromises);
-
-            // Update money on backend
-            await apiService.changeMoney(userEmail, coinsEarned, token);
-
-            // Cycle weather
-            const weatherResponse = await apiService.cycleWeather(userEmail, token);
-            const weatherTypes: WeatherType[] = ["sunny", "rainy", "cloudy"];
-            setWeather(weatherTypes[weatherResponse.new_weather] || "sunny");
+            // Execute all backend operations independently
+            await Promise.allSettled([
+                Promise.all(growPromises),
+                apiService.changeMoney(userEmail, coinsEarned, token),
+                apiService.cycleWeather(userEmail, token),
+            ]).then((results) => {
+                results.forEach((result, index) => {
+                    if (result.status === 'rejected') {
+                        const labels = ['grow plants', 'update money', 'cycle weather'];
+                        console.error(`Failed to ${labels[index]}:`, result.reason);
+                    }
+                });
+            });
 
         } catch (error) {
             console.error("Failed to process pomodoro rewards:", error);
         }
 
+        // Don't increment counter yet - wait until break is claimed
+        // Determine if the NEXT break should be long (based on current count + 1)
+        const nextBreakNumber = pomodoroCount + 1;
+        const isLongBreak = nextBreakNumber % 4 === 0;
+        const breakDuration = isLongBreak ? 15 * 60 : 5 * 60; // 15 min for long, 5 min for short
+        
         // Start break mode
         setPomodoroMode("break");
-        setBreakTime(5 * 60);
-        setIsBreakRunning(false); // Start in paused state
+        setBreakTime(breakDuration);
+        setIsBreakRunning(true); // Auto-start break timer
         setPomodoroCompleted(false);
         setIsClaimingReward(false);
+        setCurrentBreakNumber(nextBreakNumber); // Break number is what it will be after completion
     };
 
     // Claim break reward and restart pomodoro
     const handleClaimBreakReward = async () => {
+        // Prevent multiple claims
+        if (isClaimingReward) return;
+        setIsClaimingReward(true);
+
+        // Check if this is a long break (every 4th pomodoro)
+        const isLongBreak = currentBreakNumber % 4 === 0;
+        const breakMultiplier = isLongBreak ? 3 : 1; // Triple rewards for long breaks
+        
         const multiplier = calculateIncomeMultiplier();
-        const baseCoins = 25;
+        const baseCoins = 25 * breakMultiplier; // Triple coins for long breaks
         
         // Apply weather effect to income (sunny = 1.5x multiplicative)
         const weatherMultiplier = weather === "sunny" ? 1.5 : 1.0;
@@ -1478,13 +2001,15 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         
         // Apply weather effect to time (rainy = 1.5x multiplicative)
         const timeMultiplier = weather === "rainy" ? 1.5 : 1.0;
-        const timeToGrow = Math.floor(5 * timeMultiplier);
+        const baseTime = 5 * breakMultiplier; // Triple time for long breaks
+        const timeToGrow = Math.floor(baseTime * timeMultiplier);
 
         // Play coin animation
         const newCoins: CoinParticle[] = [];
         const breakX = window.innerWidth - 150;
         const breakY = window.innerHeight - 150;
-        for (let i = 0; i < 5; i++) {
+        const coinCount = isLongBreak ? 15 : 5; // More coins for long breaks
+        for (let i = 0; i < coinCount; i++) {
             newCoins.push({
                 id: `coin-${Date.now()}-${i}`,
                 x: breakX,
@@ -1572,17 +2097,22 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
             console.error("Failed to process break rewards:", error);
         }
 
-        // Restart pomodoro
+        // NOW increment the pomodoro counter (after break is claimed)
+        setPomodoroCount(currentBreakNumber);
+
+        // Restart pomodoro - auto-start the next one
         setPomodoroMode("work");
         setPomodoroTime(25 * 60);
-        setIsPomodoroRunning(true); // Start timer automatically
+        setIsPomodoroRunning(true); // Auto-start timer
         setPomodoroCompleted(false);
+        setIsClaimingReward(false);
+        setCurrentPomodoroNumber(currentBreakNumber + 1); // Set the next pomodoro number
     };
 
     return (
         <>
             <img
-                src={draggedSeed || draggedTool || attachedSproutId ? "/Sprites/UI/cursorgrab.png" : "/Sprites/UI/cursor.png"}
+                src={draggedSeed || draggedTool || selectedSeed || selectedTool || attachedSproutId ? "/Sprites/UI/cursorgrab.png" : "/Sprites/UI/cursor.png"}
                 alt="cursor"
                 className="image-pixelated pointer-events-none fixed object-contain"
                 style={{
@@ -1595,6 +2125,27 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                 }}
                 draggable={false}
             />
+
+            {/* Show selected seed or tool following cursor */}
+            {(selectedSeed || selectedTool) && (
+                <img
+                    // When a seed is selected for click-to-place, show the sprout preview
+                    src={selectedSeed ? "/Sprites/basicSprout.png" : selectedTool!.image}
+                    alt={selectedSeed ? `${selectedSeed.type} sprout` : `${selectedTool!.type} tool`}
+                    className="image-pixelated pointer-events-none fixed object-contain"
+                    style={{
+                        left: customCursorPosition.x,
+                        top: customCursorPosition.y,
+                        width: "48px",
+                        height: "48px",
+                        transform: "translate(-50%, -50%)",
+                        zIndex: 99998,
+                        opacity: 0.7,
+                        filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))",
+                    }}
+                    draggable={false}
+                />
+            )}
 
             {weather === "rainy" && <Rain rainDrops={rainDrops} />}
 
@@ -1785,7 +2336,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
 
                                 {/* Stage */}
                                 <div className="text-purple-800">
-                                    🌿 Stage: {stage === 0 ? "Seedling" : stage === 1 ? "Juvenile" : "Mature"}
+                                    🌿 Stage: {stage === 0 ? "Sprout" : stage === 1 ? "Seedling" : "Mature"}
                                 </div>
 
                                 {/* Time to next stage */}
@@ -1939,68 +2490,83 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                             <li
                                                 key={seed.id}
                                                 onMouseDown={canAfford ? handleSeedMouseDown(seed) : () => playSound("/Audio/error.mp3")}
+                                                onClick={canAfford ? handleSeedClick(seed) : () => playSound("/Audio/error.mp3")}
                                                 onMouseEnter={() => {
                                                     playSound("/Audio/interact.mp3");
                                                     setHoveredPacketId(seed.id);
                                                 }}
                                                 onMouseLeave={() => setHoveredPacketId(null)}
-                                                className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all ${draggedSeed?.id === seed.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : canAfford ? "opacity-100 cursor-grab active:cursor-grabbing active:scale-95" : "opacity-30 cursor-not-allowed"} ${!draggedSeed && canAfford ? "wiggle-hover" : ""}`}
+                                                className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all ${draggedSeed?.id === seed.id || selectedSeed?.id === seed.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : canAfford ? "opacity-100 cursor-grab active:cursor-grabbing active:scale-95" : "opacity-30 cursor-not-allowed"} ${!draggedSeed && canAfford ? "wiggle-hover" : ""}`}
                                                 style={{
                                                     filter: !canAfford ? "grayscale(100%)" : "none",
                                                     flexShrink: 0,
                                                 }}
                                             >
                                                 <img src={seed.image} className="w-fit h-full image-pixelated object-contain pointer-events-none" alt={`${seed.type} packet`} draggable={false} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3))" }} />
-                                                {seed.id === "berry" && isHovered && (
-                                                    <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-50%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
-                                                            <img src="/Sprites/berry/blueberry_2.png" className="w-12 h-12 image-pixelated object-cover" alt="berry blue" draggable={false} style={{ width: "48px", height: "48px" }} />
-                                                            <div className="text-xs text-white font-bold whitespace-nowrap">79%</div>
-                                                        </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "50%", transform: "translateX(-50%)", filter: !canAfford ? "grayscale(100%)" : "none" }}>
-                                                            <img src="/Sprites/berry/strawberry_2.png" className="w-12 h-12 image-pixelated object-cover" alt="berry straw" draggable={false} style={{ width: "48px", height: "48px" }} />
-                                                            <div className="text-xs text-white font-bold whitespace-nowrap">20%</div>
-                                                        </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", right: "-50%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
-                                                            <img src="/Sprites/berry/ancient_fruit_2.png" className="w-12 h-12 image-pixelated object-cover" alt="berry ancient" draggable={false} style={{ width: "48px", height: "48px" }} />
-                                                            <div className="text-xs text-white font-bold whitespace-nowrap">1%</div>
-                                                        </div>
+                                                
+                                                {/* Seed packet tooltip */}
+                                                {isHovered && !draggedSeed && !selectedSeed && (
+                                                    <div
+                                                        className="absolute bottom-full mb-2 text-sm px-3 py-1 whitespace-nowrap z-50 font-bold pointer-events-none"
+                                                        style={{
+                                                            backgroundColor: "#D4A574",
+                                                            border: "3px solid #8B4513",
+                                                            color: "#9e4539",
+                                                            boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                            imageRendering: "pixelated",
+                                                        }}
+                                                    >
+                                                        {seed.type === "Berry" ? "Berry Seeds" : seed.type === "Fungi" ? "Mushroom Seeds" : "Rose Seeds"}
                                                     </div>
                                                 )}
-                                                {seed.id === "fungi" && isHovered && (
+
+                                                {isHovered && plantVarieties[seed.id] && (
                                                     <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-50%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
-                                                            <img src="/Sprites/fungi/brown_mushroom_2.png" className="w-12 h-12 image-pixelated object-cover" alt="brown mushroom" draggable={false} style={{ width: "48px", height: "48px" }} />
-                                                            <div className="text-xs text-white font-bold whitespace-nowrap">79%</div>
-                                                        </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "50%", transform: "translateX(-50%)", filter: !canAfford ? "grayscale(100%)" : "none" }}>
-                                                            <img src="/Sprites/fungi/red_mushroom_2.png" className="w-12 h-12 image-pixelated object-cover" alt="red mushroom" draggable={false} style={{ width: "48px", height: "48px" }} />
-                                                            <div className="text-xs text-white font-bold whitespace-nowrap">20%</div>
-                                                        </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", right: "-50%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
-                                                            <img src="/Sprites/fungi/mario_mushroom_2.png" className="w-12 h-12 image-pixelated object-cover" alt="mario mushroom" draggable={false} style={{ width: "48px", height: "48px" }} />
-                                                            <div className="text-xs text-white font-bold whitespace-nowrap">1%</div>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                {seed.id === "rose" && isHovered && (
-                                                    <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-90%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
-                                                            <img src="/Sprites/roses/red_rose_2.png" className="w-12 h-12 image-pixelated object-cover" alt="red rose" draggable={false} style={{ width: "48px", height: "48px" }} />
-                                                            <div className="text-xs text-white font-bold whitespace-nowrap">79%</div>
-                                                        </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-30%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
-                                                            <img src="/Sprites/roses/pink_rose_2.png" className="w-12 h-12 image-pixelated object-cover" alt="pink rose" draggable={false} style={{ width: "48px", height: "48px" }} />
-                                                            <div className="text-xs text-white font-bold whitespace-nowrap">20%</div>
-                                                        </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "30%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
-                                                            <img src="/Sprites/roses/white_rose_2.png" className="w-12 h-12 image-pixelated object-cover" alt="white rose" draggable={false} style={{ width: "48px", height: "48px" }} />
-                                                            <div className="text-xs text-white font-bold whitespace-nowrap">20%</div>
-                                                        </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "110%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
-                                                            <img src="/Sprites/roses/withered_rose_2.png" className="w-12 h-12 image-pixelated object-cover" alt="wither rose" draggable={false} style={{ width: "48px", height: "48px" }} />
-                                                            <div className="text-xs text-white font-bold whitespace-nowrap">1%</div>
-                                                        </div>
+                                                        {plantVarieties[seed.id].map((rarityGroup, rarityIndex) => {
+                                                            // Determine position based on number of rarity groups
+                                                            const totalGroups = plantVarieties[seed.id].length;
+                                                            let leftPosition = "50%";
+                                                            let transform = "translateX(-50%)";
+
+                                                            if (totalGroups === 3) {
+                                                                if (rarityIndex === 0) {
+                                                                    leftPosition = "-50%";
+                                                                    transform = "none";
+                                                                } else if (rarityIndex === 1) {
+                                                                    leftPosition = "50%";
+                                                                    transform = "translateX(-50%)";
+                                                                } else {
+                                                                    leftPosition = "auto";
+                                                                    transform = "none";
+                                                                }
+                                                            }
+
+                                                            // Get current variety to show (swap if multiple)
+                                                            const varietyKey = `${seed.id}-${rarityIndex}`;
+                                                            const varietyIndex = currentVarietyIndices[varietyKey] || 0;
+                                                            const currentVariety = rarityGroup.varieties[varietyIndex];
+
+                                                            // Determine plant type for sprite path
+                                                            let plantType = seed.id;
+                                                            if (plantType === "rose") plantType = "roses";
+
+                                                            return (
+                                                                <div
+                                                                    key={rarityIndex}
+                                                                    className="absolute flex flex-col items-center gap-1"
+                                                                    style={{
+                                                                        top: "100%",
+                                                                        left: leftPosition !== "auto" ? leftPosition : undefined,
+                                                                        right: leftPosition === "auto" ? "-50%" : undefined,
+                                                                        transform: transform !== "none" ? transform : undefined,
+                                                                        filter: !canAfford ? "grayscale(100%)" : "none",
+                                                                    }}
+                                                                >
+                                                                    <img src={`/Sprites/${plantType}/${currentVariety}_2.png`} className="w-12 h-12 image-pixelated object-cover" alt={currentVariety} draggable={false} style={{ width: "48px", height: "48px" }} />
+                                                                    <div className="text-xs text-white font-bold whitespace-nowrap">{rarityGroup.chance}%</div>
+                                                                </div>
+                                                            );
+                                                        })}
                                                     </div>
                                                 )}
                                                 <div className={`text-sm pointer-events-none font-bold ${!canAfford ? "text-red-600" : ""}`} style={{ color: !canAfford ? "" : "#9e4539" }}>
@@ -2022,7 +2588,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                 <li
                                                     key={tool.id}
                                                     onMouseDown={!attachedSproutId && tool.type !== "Backpack" ? handleToolMouseDown(tool) : undefined}
-                                                    onClick={async () => {
+                                                    onClick={async (e) => {
                                                         if (tool.type === "Backpack" && money >= (tool.price || 0)) {
                                                             try {
                                                                 const upgradeCost = tool.price || 0;
@@ -2050,6 +2616,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                             }
                                                         } else if (tool.type === "Backpack") {
                                                             playSound("/Audio/error.mp3");
+                                                        } else if (!attachedSproutId) {
+                                                            // Handle click-to-select for water/fertilizer
+                                                            handleToolClick(tool)(e);
                                                         }
                                                     }}
                                                     onMouseEnter={() => {
@@ -2061,7 +2630,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                     onMouseLeave={() => {
                                                         setHoveredToolId(null);
                                                     }}
-                                                    className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all relative ${tool.type === "Backpack" ? (money >= (tool.price || 0) ? "opacity-100 cursor-pointer active:scale-95" : "opacity-30 cursor-not-allowed") : draggedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : attachedSproutId ? "opacity-30 cursor-not-allowed" : "opacity-100 cursor-grab active:cursor-grabbing active:scale-95"} ${!draggedTool && !attachedSproutId && (tool.type === "Backpack" ? money >= (tool.price || 0) : true) ? "wiggle-hover" : ""}`}
+                                                    className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all relative ${tool.type === "Backpack" ? (money >= (tool.price || 0) ? "opacity-100 cursor-pointer active:scale-95" : "opacity-30 cursor-not-allowed") : draggedTool?.id === tool.id || selectedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : attachedSproutId ? "opacity-30 cursor-not-allowed" : "opacity-100 cursor-grab active:cursor-grabbing active:scale-95"} ${!draggedTool && !attachedSproutId && (tool.type === "Backpack" ? money >= (tool.price || 0) : true) ? "wiggle-hover" : ""}`}
                                                     style={{
                                                         pointerEvents: tool.type === "Backpack" ? "auto" : attachedSproutId ? "none" : "auto",
                                                         filter: tool.type === "Backpack" && money < (tool.price || 0) ? "grayscale(100%)" : "none",
@@ -2088,9 +2657,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                                 animation: "none",
                                                             }}
                                                         >
-                                                            {tool.type === "WateringCan" && "Turn seedlings into sprouts"}
-                                                            {tool.type === "Fertilizer" && "Turn sprouts into plants"}
-                                                            {tool.type === "Backpack" && `Max Plants Upgrade (+25 slots)`}
+                                                            {tool.type === "WateringCan" && "Enables sprouts to grow"}
+                                                            {tool.type === "Fertilizer" && "Enables growth to maturity"}
+                                                            {tool.type === "Backpack" && `Extra Plant Slots (+25)`}
                                                         </div>
                                                     )}
                                                 </li>
@@ -2122,7 +2691,24 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                             </div>
                         </div>
                         <div className="flex flex-col items-end gap-2">
-                            <div className="text-5xl font-bold" style={{ color: "#cd683d", filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>{userEmail.split('@')[0]}</div>
+                            <div className="flex flex-row items-center gap-3">
+                                <div className="text-5xl font-bold" style={{ color: "#daa87c", filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>{userEmail.split('@')[0]}</div>
+                                <button
+                                    onClick={async () => {
+                                        await onSignOut();
+                                    }}
+                                    className="hover:opacity-70 transition-opacity flex items-center justify-center"
+                                    title="Sign Out"
+                                >
+                                    <img
+                                        src="/Sprites/UI/signout.png"
+                                        alt="Sign Out"
+                                        className="image-pixelated w-9 h-auto"
+                                        style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))", imageRendering: "pixelated" }}
+                                        draggable={false}
+                                    />
+                                </button>
+                            </div>
                             <div className="text-4xl text-white font-bold" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>${Math.round(displayedMoney)}</div>
                         </div>
                     </div>
@@ -2140,6 +2726,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                 <img src="/Sprites/UI/SpadeUI.png" className="image-pixelated w-[100px] h-auto" alt="tool ui background" draggable={false} />
                                                 <div
                                                     onMouseDown={!attachedSproutId ? handleToolMouseDown(tool) : undefined}
+                                                    onClick={!attachedSproutId ? handleToolClick(tool) : undefined}
                                                     onMouseEnter={() => {
                                                         if (showDollarSign) {
                                                             setIsHoveringDollarSign(true);
@@ -2152,7 +2739,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                         if (showDollarSign) setIsHoveringDollarSign(false);
                                                         setHoveredToolId(null);
                                                     }}
-                                                    className={`absolute inset-0 flex justify-center items-center active:scale-95 transition-all ${attachedSproutId && !showDollarSign ? "opacity-30 cursor-not-allowed" : showDollarSign ? "opacity-100 cursor-pointer" : draggedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing" : "opacity-100 cursor-grab active:cursor-grabbing"} ${!draggedTool && !attachedSproutId ? "wiggle-hover" : ""} ${showDollarSign ? "wiggle-hover" : ""}`}
+                                                    className={`absolute inset-0 flex justify-center items-center active:scale-95 transition-all ${attachedSproutId && !showDollarSign ? "opacity-30 cursor-not-allowed" : showDollarSign ? "opacity-100 cursor-pointer" : draggedTool?.id === tool.id || selectedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing" : "opacity-100 cursor-grab active:cursor-grabbing"} ${!draggedTool && !attachedSproutId ? "wiggle-hover" : ""} ${showDollarSign ? "wiggle-hover" : ""}`}
                                                     style={{
                                                         pointerEvents: attachedSproutId && !showDollarSign ? "none" : "auto",
                                                     }}
@@ -2196,7 +2783,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                             animation: "none",
                                         }}
                                     >
-                                        Plants in inventory
+                                        Plants Planted / Max Plants
                                     </div>
                                 )}
                             </div>
@@ -2215,20 +2802,23 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                         imageRendering: "pixelated",
                                     }}
                                 >
-                                    Start Pomodoro
+                                    Start Pomodoro Session
                                 </button>
                             )}
 
                             {/* Small break timer in bottom right */}
                             {pomodoroMode === "break" && (
                                 <div className="flex flex-col items-center gap-2">
-                                    <div className="text-3xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>Short Break</div>
+                                    <div className="text-3xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>
+                                        Break #{currentBreakNumber} {currentBreakNumber % 4 === 0 ? "(Long)" : "(Short)"}
+                                    </div>
                                     <div className="text-7xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>{formatTime(breakTime)}</div>
                                     {breakTime === 0 ? (
                                         <button
                                             onClick={handleClaimBreakReward}
-                                            onMouseEnter={() => playSound("/Audio/interact.mp3")}
-                                            className="px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                            onMouseEnter={() => !isClaimingReward && playSound("/Audio/interact.mp3")}
+                                            disabled={isClaimingReward}
+                                            className={`px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 ${isClaimingReward ? "opacity-50 cursor-not-allowed" : "wiggle-hover"}`}
                                             style={{
                                                 backgroundColor: "#4CAF50",
                                                 border: "3px solid #2E7D32",
@@ -2236,39 +2826,37 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                 imageRendering: "pixelated",
                                             }}
                                         >
-                                            Continue ({Math.floor(25 * calculateIncomeMultiplier())} coins)
+                                            {isClaimingReward ? "Claiming..." : `Continue (${Math.floor(25 * calculateIncomeMultiplier() * (currentBreakNumber % 4 === 0 ? 3 : 1))} coins)`}
                                         </button>
                                     ) : (
-                                        <>
-                                            <button
-                                                onClick={() => setIsBreakRunning(!isBreakRunning)}
-                                                onMouseEnter={() => playSound("/Audio/interact.mp3")}
-                                                className="px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 wiggle-hover"
-                                                style={{
-                                                    backgroundColor: "#D4A574",
-                                                    border: "3px solid #8B4513",
-                                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
-                                                    imageRendering: "pixelated",
-                                                }}
-                                            >
-                                                {isBreakRunning ? "Pause" : "Start"}
-                                            </button>
-                                            {/* Exit Break button - centered under start/pause */}
-                                            <button
-                                                onClick={handleExitPomodoro}
-                                                onMouseEnter={() => playSound("/Audio/interact.mp3")}
-                                                className="px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 wiggle-hover mt-2"
-                                                style={{
-                                                    backgroundColor: "#D4A574",
-                                                    border: "3px solid #8B4513",
-                                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
-                                                    imageRendering: "pixelated",
-                                                }}
-                                            >
-                                                Exit Break
-                                            </button>
-                                        </>
+                                        <button
+                                            onClick={() => setIsBreakRunning(!isBreakRunning)}
+                                            onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                            className="px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                            style={{
+                                                backgroundColor: "#D4A574",
+                                                border: "3px solid #8B4513",
+                                                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                imageRendering: "pixelated",
+                                            }}
+                                        >
+                                            {isBreakRunning ? "Pause" : "Start"}
+                                        </button>
                                     )}
+                                    {/* Exit Break button - always shown */}
+                                    <button
+                                        onClick={handleExitPomodoro}
+                                        onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                        className="px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 wiggle-hover mt-2"
+                                        style={{
+                                            backgroundColor: "#D4A574",
+                                            border: "3px solid #8B4513",
+                                            boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                            imageRendering: "pixelated",
+                                        }}
+                                    >
+                                        Exit Pomodoro Session
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -2294,7 +2882,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                             className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-6"
                             style={{ zIndex: 10004 }}
                         >
-                            <div className="text-6xl font-bold text-white">Pomodoro</div>
+                            <div className="text-6xl font-bold text-white">Pomodoro #{currentPomodoroNumber}</div>
                             <div className="text-9xl font-bold text-white">{formatTime(pomodoroTime)}</div>
 
                             {pomodoroCompleted ? (
@@ -2340,7 +2928,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                     imageRendering: "pixelated",
                                 }}
                             >
-                                Exit Pomodoro
+                                Exit Pomodoro Session
                             </button>
                         </div>
                     </>

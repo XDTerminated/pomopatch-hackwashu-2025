@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { useUser, useAuth } from "@clerk/clerk-react";
+import { useUser, useAuth, useClerk } from "@clerk/clerk-react";
 import App from "./App";
 import { apiService, UserData, Plant } from "./api";
 
 export default function GameWrapper() {
     const { user } = useUser();
     const { getToken } = useAuth();
+    const { signOut } = useClerk();
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [userData, setUserData] = useState<UserData | null>(null);
@@ -89,5 +90,21 @@ export default function GameWrapper() {
         );
     }
 
-    return <App initialMoney={userData?.money} initialPlantLimit={userData?.plant_limit} initialWeather={userData?.weather} initialPlants={plants} userEmail={user?.primaryEmailAddress?.emailAddress || ""} getAuthToken={getToken} />;
+    const handleSignOut = async () => {
+        await signOut();
+    };
+
+    // Log backend weather value for debugging and coerce to number when passing to App
+    console.log("[GameWrapper] userData.weather:", userData?.weather);
+    return (
+        <App
+            initialMoney={userData?.money}
+            initialPlantLimit={userData?.plant_limit}
+            initialWeather={Number(userData?.weather ?? 0)}
+            initialPlants={plants}
+            userEmail={user?.primaryEmailAddress?.emailAddress || ""}
+            getAuthToken={getToken}
+            onSignOut={handleSignOut}
+        />
+    );
 }
