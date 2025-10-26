@@ -64,6 +64,12 @@ body {
     transform: none !important;
 }
 
+/* Prevent tooltips from wiggling */
+.pointer-events-none {
+    animation: none !important;
+    transform: none !important;
+}
+
 @keyframes settle {
     0% {
         transform: rotate(-5deg);

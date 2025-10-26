@@ -1647,7 +1647,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                 draggable={false}
                                 style={{
                                     opacity: isAttached ? 0.7 : 1,
-                                    filter: hasCollision || inUIArea ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)" : isHovered && !isAttached && pomodoroMode === "none" ? "brightness(1.3)" : "none",
+                                    filter: hasCollision || inUIArea ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)" : isHovered ? "brightness(1.3) saturate(0.9)" : "none",
                                     transition: isAttached ? "none" : "all 0.3s",
                                     animation: isAttached ? "shake 0.15s ease-in-out infinite" : isNewlyPlaced ? "settle 0.4s ease-out" : "none",
                                 }}
@@ -1675,69 +1675,96 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                     <span className="text-white text-xs font-bold whitespace-nowrap">{growthTime} mins</span>
                                 </div>
                             )}
-                            
-                            {isHovered && !isAttached && pomodoroMode === "none" && (
-                                <div
-                                    className="fixed bg-black/80 text-white text-xs px-2 py-1 rounded whitespace-nowrap"
-                                    style={{
-                                        left: sprout.x,
-                                        bottom: `calc(100vh - ${sprout.y - 48}px - 30px)`,
-                                        transform: "translateX(-50%)",
-                                        zIndex: 20000,
-                                        pointerEvents: "none",
-                                    }}
-                                >
-                                    <div className="flex flex-col gap-1">
-                                        {/* Species (rarity color) and Family */}
-                                        <div className={`font-bold ${sprout.rarity === 0 ? "text-blue-400" : sprout.rarity === 1 ? "text-purple-400" : "text-yellow-400"}`}>
-                                            {(sprout.species || "Unknown").split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')} ({(sprout.seedType || "").charAt(0).toUpperCase() + (sprout.seedType || "").slice(1)})
-                                        </div>
-
-                                        {/* Rarity with star */}
-                                        {sprout.rarity !== undefined && (
-                                            <div className={sprout.rarity === 0 ? "text-blue-400" : sprout.rarity === 1 ? "text-purple-400" : "text-yellow-400"}>
-                                                ★ {sprout.rarity === 0 ? "Rare" : sprout.rarity === 1 ? "Epic" : "Legendary"}
-                                            </div>
-                                        )}
-
-                                        {/* Income Multiplier */}
-                                        {getPlantIncomeBonus(sprout) && (
-                                            <div className="text-green-400">
-                                                💰 Income: {getPlantIncomeBonus(sprout)}
-                                            </div>
-                                        )}
-
-                                        {/* Stage */}
-                                        <div className="text-purple-400">
-                                            🌿 Stage: {stage === 0 ? "Seedling" : stage === 1 ? "Juvenile" : "Mature"}
-                                        </div>
-
-                                        {/* Time to next stage */}
-                                        {growthTime !== null && growthTime !== undefined && growthTime > 0 && (
-                                            <div className="text-blue-400">
-                                                🕐 {growthTime} mins to next stage
-                                            </div>
-                                        )}
-
-                                        {/* Fertilizer needed */}
-                                        {fertilizerNeeded !== null && fertilizerNeeded !== undefined && fertilizerNeeded > 0 && (
-                                            <div className="text-yellow-400">
-                                                🌱 Fertilizer needed ({fertilizerNeeded}x)
-                                            </div>
-                                        )}
-
-                                        {/* Water needed - only for stage 0 without growth time */}
-                                        {stage === 0 && growthTime === null && (
-                                            <div className="text-blue-400">
-                                                💧 Water needed
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     );
                 })}
+
+                {/* Render tooltip for hovered plant - outside plant containers to ensure it's always on top */}
+                {hoveredSproutId && pomodoroMode === "none" && (() => {
+                    const hoveredSprout = placedSprouts.find(s => s.id === hoveredSproutId);
+                    if (!hoveredSprout) return null;
+
+                    const stage = hoveredSprout.stage;
+                    const growthTime = hoveredSprout.growth_time_remaining;
+                    const fertilizerNeeded = hoveredSprout.fertilizer_remaining;
+
+                    return (
+                        <div
+                            className="fixed text-xs px-3 py-2 whitespace-nowrap font-bold"
+                            style={{
+                                left: hoveredSprout.x,
+                                bottom: `calc(100vh - ${hoveredSprout.y - 48}px - 30px)`,
+                                transform: "translateX(-50%)",
+                                zIndex: 2147483647,
+                                pointerEvents: "none",
+                                backgroundColor: "#E8C9A0",
+                                border: "3px solid #8B4513",
+                                color: "#9e4539",
+                                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                imageRendering: "pixelated",
+                            }}
+                        >
+                            <div className="flex flex-col gap-1">
+                                {/* Species (rarity color) and Family - Hidden for seedlings */}
+                                {stage === 0 ? (
+                                    <div className="font-bold text-gray-700">
+                                        ??? (???)
+                                    </div>
+                                ) : (
+                                    <div className={`font-bold ${hoveredSprout.rarity === 0 ? "text-blue-800" : hoveredSprout.rarity === 1 ? "text-purple-800" : "text-amber-800"}`}>
+                                        {(hoveredSprout.species || "Unknown").split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')} ({(hoveredSprout.seedType || "").charAt(0).toUpperCase() + (hoveredSprout.seedType || "").slice(1)})
+                                    </div>
+                                )}
+
+                                {/* Rarity with star - Hidden for seedlings */}
+                                {stage === 0 ? (
+                                    <div className="text-gray-700">
+                                        ★ ???
+                                    </div>
+                                ) : (
+                                    hoveredSprout.rarity !== undefined && (
+                                        <div className={hoveredSprout.rarity === 0 ? "text-blue-800" : hoveredSprout.rarity === 1 ? "text-purple-800" : "text-amber-800"}>
+                                            ★ {hoveredSprout.rarity === 0 ? "Rare" : hoveredSprout.rarity === 1 ? "Epic" : "Legendary"}
+                                        </div>
+                                    )
+                                )}
+
+                                {/* Income Multiplier */}
+                                {getPlantIncomeBonus(hoveredSprout) && (
+                                    <div className="text-green-800">
+                                        💰 Income: {getPlantIncomeBonus(hoveredSprout)}
+                                    </div>
+                                )}
+
+                                {/* Stage */}
+                                <div className="text-purple-800">
+                                    🌿 Stage: {stage === 0 ? "Seedling" : stage === 1 ? "Juvenile" : "Mature"}
+                                </div>
+
+                                {/* Time to next stage */}
+                                {growthTime !== null && growthTime !== undefined && growthTime > 0 && (
+                                    <div className="text-blue-800">
+                                        🕐 {growthTime} mins to next stage
+                                    </div>
+                                )}
+
+                                {/* Fertilizer needed */}
+                                {fertilizerNeeded !== null && fertilizerNeeded !== undefined && fertilizerNeeded > 0 && (
+                                    <div className="text-amber-800">
+                                        🌱 Fertilizer needed ({fertilizerNeeded}x)
+                                    </div>
+                                )}
+
+                                {/* Water needed - only for stage 0 without growth time */}
+                                {stage === 0 && growthTime === null && (
+                                    <div className="text-blue-800">
+                                        💧 Water needed
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {isDraggingOverBackground &&
                     draggedSeed &&
@@ -2003,7 +2030,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
 
                                                     {hoveredToolId === tool.id && (tool.type !== "Backpack" ? !attachedSproutId : true) && (
                                                         <div
-                                                            className="absolute top-full mt-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold"
+                                                            className="absolute top-full mt-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold pointer-events-none"
                                                             style={{
                                                                 backgroundColor: "#D4A574",
                                                                 border: "3px solid #8B4513",
@@ -2022,14 +2049,16 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                         })}
                                 </ol>
                             </div>
-
+                        </div>
+                        <div className="flex flex-row gap-4 items-center">
+                            {/* Weather next to money */}
                             <div className="flex flex-col items-center gap-1 relative" onMouseEnter={() => setIsHoveringWeather(true)} onMouseLeave={() => setIsHoveringWeather(false)}>
                                 <img src={getWeatherIcon()} alt={`${weather} weather`} className="image-pixelated w-12 h-12 object-contain" draggable={false} />
-                                <div className="text-xs text-white font-bold capitalize">{weather}</div>
+                                <div className="text-base text-white font-bold capitalize">{weather}</div>
 
                                 {isHoveringWeather && (
                                     <div
-                                        className="absolute top-full mt-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold"
+                                        className="absolute top-full mt-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold pointer-events-none"
                                         style={{
                                             backgroundColor: "#D4A574",
                                             border: "3px solid #8B4513",
@@ -2042,8 +2071,6 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                     </div>
                                 )}
                             </div>
-                        </div>
-                        <div className="flex flex-col items-center gap-2">
                             <div className="text-5xl text-white font-bold">${Math.round(displayedMoney)}</div>
                         </div>
                     </div>
@@ -2085,7 +2112,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
 
                                             {hoveredToolId === tool.id && !showDollarSign && !attachedSproutId && (
                                                 <div
-                                                    className="absolute bottom-full mb-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold"
+                                                    className="absolute bottom-full mb-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold pointer-events-none"
                                                     style={{
                                                         backgroundColor: "#D4A574",
                                                         border: "3px solid #8B4513",
@@ -2104,7 +2131,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                 {placedSprouts.length}/{inventoryLimit}
                                 {isHoveringPlantCount && (
                                     <div
-                                        className="absolute bottom-full mb-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold"
+                                        className="absolute bottom-full mb-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold pointer-events-none"
                                         style={{
                                             backgroundColor: "#D4A574",
                                             border: "3px solid #8B4513",
