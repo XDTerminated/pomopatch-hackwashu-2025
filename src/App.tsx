@@ -30,6 +30,7 @@ interface PlacedSprout {
     species?: string;
     rarity?: number;
     growth_time_remaining?: number | null;
+    fertilizer_remaining?: number | null;
 }
 
 interface AppProps {
@@ -122,6 +123,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
             species: plant.plant_species,
             rarity: plant.rarity,
             growth_time_remaining: plant.growth_time_remaining,
+            fertilizer_remaining: plant.fertilizer_remaining,
         }));
     });
     const [hoveredSproutId, setHoveredSproutId] = useState<string | null>(null);
@@ -703,6 +705,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         y: cursorPosition.y,
                         seedType: draggedSeed.type,
                         stage: 0,
+                        growth_time_remaining: null, // New plants can be watered immediately
                     };
 
                     setPlacedSprouts([...placedSprouts, newSprout]);
@@ -751,7 +754,20 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         })
                         .then((response) => {
                             const realSproutId = `plant-${response.plant_id}`;
-                            setPlacedSprouts((prev) => prev.map((s) => (s.id === tempSproutId ? { ...s, id: realSproutId } : s)));
+                            // Update with complete backend data
+                            setPlacedSprouts((prev) =>
+                                prev.map((s) =>
+                                    s.id === tempSproutId
+                                        ? {
+                                              ...s,
+                                              id: realSproutId,
+                                              species: response.plant_species,
+                                              rarity: response.rarity,
+                                              growth_time_remaining: null, // Backend returns this as null for new plants
+                                          }
+                                        : s
+                                )
+                            );
                             setMoney(response.new_balance);
                         })
                         .catch((error) => {
@@ -800,9 +816,11 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         }
 
                         const fertilizerCost = draggedTool.price || 30;
+                        const currentMoney = money;
 
                         console.log("🌿 Fertilizing plant:", { plantId, currentMoney: money, fertilizerCost, newMoney: money - fertilizerCost });
 
+                        // Optimistic update - update client side first for instant feedback
                         setMoney(money - fertilizerCost);
                         playSound("/Audio/fertilizerUse.mp3");
 
@@ -836,9 +854,30 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         // Get fresh token before API call
                         getAuthToken().then((token) => {
                             if (token) {
-                                apiService.applyFertilizer(userEmail, plantId, token).catch((error) => {
-                                    console.error("❌ Failed to apply fertilizer:", error);
-                                });
+                                apiService
+                                    .applyFertilizer(userEmail, plantId, token)
+                                    .then((response) => {
+                                        console.log("🌿 Fertilizer applied successfully:", response);
+                                        // Update local plant state with backend response
+                                        setPlacedSprouts((prev) =>
+                                            prev.map((s) =>
+                                                s.id === hoveredSproutId
+                                                    ? {
+                                                          ...s,
+                                                          growth_time_remaining: response.growth_time_remaining,
+                                                          fertilizer_remaining: response.fertilizer_remaining,
+                                                      }
+                                                    : s
+                                            )
+                                        );
+                                        setMoney(response.new_money);
+                                    })
+                                    .catch((error) => {
+                                        console.error("❌ Failed to apply fertilizer:", error);
+                                        // Rollback on error
+                                        setMoney(currentMoney);
+                                        playSound("/Audio/error.mp3");
+                                    });
                             }
                         });
                     } else if (draggedTool.type === "WateringCan") {
@@ -869,10 +908,22 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         }
 
                         const waterCost = draggedTool.price || 25;
+                        const currentMoney = money;
 
                         console.log("💧 Watering plant:", { plantId, currentMoney: money, waterCost, newMoney: money - waterCost });
 
+                        // Optimistic update - update client side first for instant feedback
                         setMoney(money - waterCost);
+                        setPlacedSprouts((prev) =>
+                            prev.map((s) =>
+                                s.id === hoveredSproutId
+                                    ? {
+                                          ...s,
+                                          growth_time_remaining: 30, // STAGE_0_GROWTH_TIME from backend
+                                      }
+                                    : s
+                            )
+                        );
                         playSound("/Audio/wateringcanuse.mp3");
 
                         const sprout = placedSprouts.find((s) => s.id === hoveredSproutId);
@@ -905,9 +956,39 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         // Get fresh token before API call
                         getAuthToken().then((token) => {
                             if (token) {
-                                apiService.applyWater(userEmail, plantId, token).catch((error) => {
-                                    console.error("❌ Failed to apply water:", error);
-                                });
+                                apiService
+                                    .applyWater(userEmail, plantId, token)
+                                    .then((response) => {
+                                        console.log("💧 Water applied successfully:", response);
+                                        // Update with actual backend values to ensure sync
+                                        setPlacedSprouts((prev) =>
+                                            prev.map((s) =>
+                                                s.id === hoveredSproutId
+                                                    ? {
+                                                          ...s,
+                                                          growth_time_remaining: response.growth_time_remaining,
+                                                      }
+                                                    : s
+                                            )
+                                        );
+                                        setMoney(response.new_money);
+                                    })
+                                    .catch((error) => {
+                                        console.error("❌ Failed to apply water:", error);
+                                        // Rollback on error
+                                        setMoney(currentMoney);
+                                        setPlacedSprouts((prev) =>
+                                            prev.map((s) =>
+                                                s.id === hoveredSproutId
+                                                    ? {
+                                                          ...s,
+                                                          growth_time_remaining: null,
+                                                      }
+                                                    : s
+                                            )
+                                        );
+                                        playSound("/Audio/error.mp3");
+                                    });
                             }
                         });
                     }
