@@ -10,6 +10,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@clerk/clerk-react": "^5.53.3",
     "@tailwindcss/vite": "^4.1.16",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
