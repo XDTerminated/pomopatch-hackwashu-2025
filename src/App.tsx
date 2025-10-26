@@ -168,10 +168,12 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
     const [searchUsername, setSearchUsername] = useState("");
     const [searchTag, setSearchTag] = useState("");
     const [isSearching, setIsSearching] = useState(false);
+    const [searchNotFound, setSearchNotFound] = useState(false);
     const [isViewingOtherGarden, setIsViewingOtherGarden] = useState(false);
     const [viewedUser, setViewedUser] = useState<UserData | null>(null);
     const [viewedPlants, setViewedPlants] = useState<PlacedSprout[]>([]);
     const [isHoveringSignOut, setIsHoveringSignOut] = useState(false);
+    const [isHoveringUsername, setIsHoveringUsername] = useState(false);
 
     // Pomodoro timer state
     const [pomodoroMode, setPomodoroMode] = useState<"none" | "work" | "break">("none");
@@ -213,19 +215,20 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
 
     // Function to play sounds
     const playSound = (soundPath: string) => {
-        if (isMuted) return;
         const audio = new Audio(soundPath);
         audio.volume = 1.0;
+        audio.muted = isMuted;
         audio.play().catch((error) => console.error("Audio play failed:", error, "Path:", soundPath));
     };
 
     // Handle wobble sound when sprout is attached
     // Handle wobble sound when sprout is attached
     useEffect(() => {
-        if (attachedSproutId && !isMuted) {
+        if (attachedSproutId) {
             const audio = new Audio("/Audio/wobble.mp3");
             audio.volume = 1.0;
             audio.loop = true;
+            audio.muted = isMuted;
             audio.play().catch((error) => console.error("Wobble audio play failed:", error));
             setWobbleAudio(audio);
 
@@ -239,21 +242,21 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
             wobbleAudio.currentTime = 0;
             setWobbleAudio(null);
         }
-    }, [attachedSproutId, isMuted]);
+    }, [attachedSproutId]);
 
     // Handle muting/unmuting of wobble audio
     useEffect(() => {
         if (wobbleAudio) {
-            wobbleAudio.volume = isMuted ? 0 : 1.0;
+            wobbleAudio.muted = isMuted;
         }
     }, [isMuted, wobbleAudio]);
 
     // Handle rain audio with fade in/out
     useEffect(() => {
         console.log("Rain effect triggered. Current weather:", weather, "Muted:", isMuted);
-        if (weather !== "rainy" || isMuted) {
-            console.log("Weather is not rainy or audio is muted, skipping rain audio");
-            // Stop existing weather audio if muted
+        if (weather !== "rainy") {
+            console.log("Weather is not rainy, skipping rain audio");
+            // Stop existing weather audio
             if (weatherAudioRef.current) {
                 try {
                     weatherAudioRef.current.pause();
@@ -281,7 +284,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         const audio = new Audio("/Audio/rain.mp3");
         audio.loop = true;
         audio.volume = 0;
-        audio.muted = isMuted; // Set muted state immediately
+        audio.muted = isMuted;
 
         const playPromise = audio.play();
 
@@ -338,23 +341,14 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                 }
             }, 50);
         };
-    }, [weather, isMuted]);
+    }, [weather]);
 
     // Handle muting/unmuting of weather audio
     useEffect(() => {
         if (weatherAudioRef.current) {
-            if (isMuted) {
-                weatherAudioRef.current.volume = 0;
-            } else {
-                // Restore volume based on weather type
-                if (weather === "rainy") {
-                    weatherAudioRef.current.volume = 0.25;
-                } else if (weather === "sunny") {
-                    weatherAudioRef.current.volume = 1.0;
-                }
-            }
+            weatherAudioRef.current.muted = isMuted;
         }
-    }, [isMuted, weather]);
+    }, [isMuted]);
 
     // Global mute effect - mute ALL audio elements in the document
     useEffect(() => {
@@ -362,22 +356,14 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         allAudioElements.forEach((audio) => {
             audio.muted = isMuted;
         });
-
-        // Also handle the audio refs we're tracking
-        if (wobbleAudio) {
-            wobbleAudio.muted = isMuted;
-        }
-        if (weatherAudioRef.current) {
-            weatherAudioRef.current.muted = isMuted;
-        }
-    }, [isMuted, wobbleAudio]);
+    }, [isMuted]);
 
     // Handle birds audio during sunny weather
     useEffect(() => {
         console.log("Birds effect triggered. Current weather:", weather, "Muted:", isMuted);
-        if (weather !== "sunny" || isMuted) {
-            console.log("Weather is not sunny or audio is muted, skipping birds audio");
-            // Stop existing weather audio if muted
+        if (weather !== "sunny") {
+            console.log("Weather is not sunny, skipping birds audio");
+            // Stop existing weather audio
             if (weatherAudioRef.current) {
                 try {
                     weatherAudioRef.current.pause();
@@ -405,7 +391,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         const audio = new Audio("/Audio/birds.mp3");
         audio.loop = true;
         audio.volume = 0;
-        audio.muted = isMuted; // Set muted state immediately
+        audio.muted = isMuted;
 
         const playPromise = audio.play();
 
@@ -461,7 +447,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                 }
             }, 50);
         };
-    }, [weather, isMuted]);
+    }, [weather]);
 
     // Handle wind audio randomly during cloudy weather
     useEffect(() => {
@@ -978,13 +964,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         } else {
             setSelectedTool(tool);
             setSelectedSeed(null);
-            if (tool.type === "Spade") {
-                playSound("/Audio/spadeclink.mp3");
-            } else if (tool.type === "WateringCan") {
-                playSound("/Audio/wateringcan.mp3");
-            } else if (tool.type === "Fertilizer") {
-                playSound("/Audio/fertilizerDrag.mp3");
-            }
+            // Sound is already played in handleToolMouseDown, don't play it again here
         }
     };
 
@@ -1070,8 +1050,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
             setDragPosition({ x: e.clientX, y: e.clientY });
             const sproutId = findSproutAtPosition(e.clientX, e.clientY);
             setHoveredSproutId(sproutId);
-        } else {
-            // Check for hover even when not dragging anything
+        } else if (!showLeaderboard && !showSearchModal) {
+            // Only allow hover detection when no modals are open
             const sproutId = findSproutAtPosition(e.clientX, e.clientY);
             setHoveredSproutId(sproutId);
         }
@@ -2333,7 +2313,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
 
                 {(isViewingOtherGarden ? viewedPlants : placedSprouts).map((sprout) => {
                     const isAttached = !isViewingOtherGarden && attachedSproutId === sprout.id;
-                    const isHovered = hoveredSproutId === sprout.id;
+                    const isHovered = hoveredSproutId === sprout.id && pomodoroMode !== "work" && !showLeaderboard && !showSearchModal;
                     const isNewlyPlaced = !isViewingOtherGarden && newlyPlacedSproutId === sprout.id;
                     const hasCollision = isAttached && checkCollision(cursorPosition.x, cursorPosition.y, sprout.id);
                     const inUIArea = isAttached && isInUIArea(cursorPosition.y);
@@ -2401,21 +2381,21 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
 
                             {/* Always visible icons for water/fertilizer needs */}
                             {!isAttached && stage === 0 && growthTime === null && (
-                                <div className="absolute flex items-center gap-1 wiggle" style={{ zIndex: 2, top: "8px", right: "8px" }}>
-                                    <img src="/Sprites/UI/wateringcan.png" className="image-pixelated w-6 h-6" alt="needs water" draggable={false} />
+                                <div className="absolute flex items-center gap-1 wiggle" style={{ zIndex: 100, top: "8px", right: "8px" }}>
+                                    <img src="/Sprites/UI/wateringcan.png" className="image-pixelated w-6 h-6" alt="needs water" draggable={false} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }} />
                                 </div>
                             )}
                             {!isAttached && stage === 1 && growthTime === null && fertilizerNeeded !== null && fertilizerNeeded !== undefined && fertilizerNeeded > 0 && (
-                                <div className="absolute flex items-center gap-1 wiggle" style={{ zIndex: 2, top: "8px", right: "8px" }}>
-                                    <img src="/Sprites/UI/fertilizer.png" className="image-pixelated w-6 h-6" alt="needs fertilizer" draggable={false} />
-                                    <span className="text-white text-xs font-bold">x{fertilizerNeeded}</span>
+                                <div className="absolute flex items-center gap-1 wiggle" style={{ zIndex: 100, top: "8px", right: "8px" }}>
+                                    <img src="/Sprites/UI/fertilizer.png" className="image-pixelated w-6 h-6" alt="needs fertilizer" draggable={false} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }} />
+                                    <span className="text-white text-xs font-bold" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }}>x{fertilizerNeeded}</span>
                                 </div>
                             )}
 
                             {/* Always visible time remaining for growing plants */}
                             {!isAttached && growthTime !== null && growthTime !== undefined && growthTime > 0 && (
-                                <div className="absolute left-1/2 transform -translate-x-1/2" style={{ zIndex: 2, top: "calc(100% - 30px)" }}>
-                                    <span className="text-white text-xs font-bold whitespace-nowrap">{growthTime} mins</span>
+                                <div className="absolute left-1/2 transform -translate-x-1/2" style={{ zIndex: 100, top: "calc(100% - 30px)" }}>
+                                    <span className="text-white text-xs font-bold whitespace-nowrap" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }}>{growthTime} mins</span>
                                 </div>
                             )}
                         </div>
@@ -2433,12 +2413,17 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                         const growthTime = hoveredSprout.growth_time_remaining;
                         const fertilizerNeeded = hoveredSprout.fertilizer_remaining;
 
+                        // Use cursor position if this plant is attached, otherwise use plant's position
+                        const isAttached = attachedSproutId === hoveredSprout.id;
+                        const displayX = isAttached ? cursorPosition.x : hoveredSprout.x;
+                        const displayY = isAttached ? cursorPosition.y : hoveredSprout.y;
+
                         return (
                             <div
                                 className="fixed text-xs px-3 py-2 whitespace-nowrap font-bold"
                                 style={{
-                                    left: hoveredSprout.x,
-                                    bottom: `calc(100vh - ${hoveredSprout.y - 48}px - 30px)`,
+                                    left: displayX,
+                                    bottom: `calc(100vh - ${displayY - 48}px - 30px)`,
                                     transform: "translateX(-50%)",
                                     zIndex: 2147483647,
                                     pointerEvents: "none",
@@ -2447,6 +2432,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                     color: "#9e4539",
                                     boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
                                     imageRendering: "pixelated",
+                                    opacity: isAttached ? 0.7 : 1,
                                 }}
                             >
                                 <div className="flex flex-col gap-1">
@@ -2598,7 +2584,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                     );
                 })}
 
-                <div className="h-full w-full flex flex-col justify-between relative z-10">
+                <div className="h-full w-full flex flex-col justify-between relative z-0">
                     <div className="flex flex-row justify-between h-fit w-full p-8">
                         <div className="flex flex-row gap-4 items-start">
                             {!isViewingOtherGarden && (
@@ -2613,7 +2599,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                     <li
                                                         key={seed.id}
                                                         onMouseDown={canAfford ? handleSeedMouseDown(seed) : () => playSound("/Audio/error.mp3")}
-                                                        onClick={canAfford ? handleSeedClick(seed) : () => playSound("/Audio/error.mp3")}
+                                                        onClick={canAfford ? handleSeedClick(seed) : undefined}
                                                         onMouseEnter={() => {
                                                             playSound("/Audio/interact.mp3");
                                                             setHoveredPacketId(seed.id);
@@ -2707,12 +2693,13 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                             {tools
                                                 .filter((tool) => tool.type === "WateringCan" || tool.type === "Fertilizer" || tool.type === "Backpack")
                                                 .map((tool) => {
+                                                    const canAffordTool = money >= (tool.price || 0);
                                                     return (
                                                         <li
                                                             key={tool.id}
-                                                            onMouseDown={!attachedSproutId && tool.type !== "Backpack" ? handleToolMouseDown(tool) : undefined}
+                                                            onMouseDown={!attachedSproutId && tool.type !== "Backpack" && canAffordTool ? handleToolMouseDown(tool) : !attachedSproutId && tool.type !== "Backpack" && !canAffordTool ? () => playSound("/Audio/error.mp3") : undefined}
                                                             onClick={async (e) => {
-                                                                if (tool.type === "Backpack" && money >= (tool.price || 0)) {
+                                                                if (tool.type === "Backpack" && canAffordTool) {
                                                                     try {
                                                                         const upgradeCost = tool.price || 0;
                                                                         // Update client side first for instant feedback
@@ -2737,26 +2724,24 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                                         setInventoryLimit(inventoryLimit);
                                                                         playSound("/Audio/error.mp3");
                                                                     }
-                                                                } else if (tool.type === "Backpack") {
+                                                                } else if (tool.type === "Backpack" && !canAffordTool) {
                                                                     playSound("/Audio/error.mp3");
-                                                                } else if (!attachedSproutId) {
+                                                                } else if (!attachedSproutId && canAffordTool && tool.type !== "Backpack") {
                                                                     // Handle click-to-select for water/fertilizer
                                                                     handleToolClick(tool)(e);
                                                                 }
                                                             }}
                                                             onMouseEnter={() => {
-                                                                if (!attachedSproutId) {
-                                                                    playSound("/Audio/interact.mp3");
-                                                                    setHoveredToolId(tool.id);
-                                                                }
+                                                                playSound("/Audio/interact.mp3");
+                                                                setHoveredToolId(tool.id);
                                                             }}
                                                             onMouseLeave={() => {
                                                                 setHoveredToolId(null);
                                                             }}
-                                                            className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all relative ${tool.type === "Backpack" ? (money >= (tool.price || 0) ? "opacity-100 cursor-pointer active:scale-95" : "opacity-30 cursor-not-allowed") : draggedTool?.id === tool.id || selectedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : attachedSproutId ? "opacity-30 cursor-not-allowed" : "opacity-100 cursor-grab active:cursor-grabbing active:scale-95"} ${!draggedTool && !attachedSproutId && (tool.type === "Backpack" ? money >= (tool.price || 0) : true) ? "wiggle-hover" : ""}`}
+                                                            className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all relative ${tool.type === "Backpack" ? (canAffordTool ? "opacity-100 cursor-pointer active:scale-95" : "opacity-30 cursor-not-allowed") : draggedTool?.id === tool.id || selectedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : attachedSproutId || !canAffordTool ? "opacity-30 cursor-not-allowed" : "opacity-100 cursor-grab active:cursor-grabbing active:scale-95"} ${!draggedTool && !attachedSproutId && canAffordTool ? "wiggle-hover" : ""}`}
                                                             style={{
-                                                                pointerEvents: tool.type === "Backpack" ? "auto" : attachedSproutId ? "none" : "auto",
-                                                                filter: tool.type === "Backpack" && money < (tool.price || 0) ? "grayscale(100%)" : "none",
+                                                                pointerEvents: attachedSproutId ? "none" : "auto",
+                                                                filter: !canAffordTool ? "grayscale(100%)" : "none",
                                                                 flexShrink: 0,
                                                             }}
                                                         >
@@ -2819,8 +2804,39 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                         </div>
                         <div className="flex flex-col items-end gap-2">
                             <div className="flex flex-row items-center gap-3">
-                                <div className="text-5xl font-bold" style={{ color: "#daa87c", filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>
-                                    {isViewingOtherGarden ? viewedUser?.username || viewedUser?.email.split("@")[0] : userEmail.split("@")[0]}
+                                <div 
+                                    className="text-5xl font-bold relative" 
+                                    style={{ color: "#daa87c", filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}
+                                    onMouseEnter={() => {
+                                        setIsHoveringUsername(true);
+                                        playSound("/Audio/interact.mp3");
+                                    }}
+                                    onMouseLeave={() => setIsHoveringUsername(false)}
+                                >
+                                    {(() => {
+                                        const displayName = isViewingOtherGarden ? viewedUser?.username || viewedUser?.email.split("@")[0] || "" : userEmail.split("@")[0];
+                                        const hashIndex = displayName.indexOf("#");
+                                        return hashIndex !== -1 ? displayName.substring(0, hashIndex) : displayName;
+                                    })()}
+                                    
+                                    {/* Username hover tooltip */}
+                                    {isHoveringUsername && (
+                                        <div
+                                            className="absolute top-full mt-2 text-sm px-3 py-2 whitespace-nowrap font-bold pointer-events-none"
+                                            style={{
+                                                backgroundColor: "#D4A574",
+                                                border: "3px solid #8B4513",
+                                                color: "#9e4539",
+                                                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                imageRendering: "pixelated",
+                                                zIndex: 999999,
+                                                left: "50%",
+                                                transform: "translateX(-50%)",
+                                            }}
+                                        >
+                                            #{isViewingOtherGarden ? viewedUser?.tag ?? "0000" : "0000"}
+                                        </div>
+                                    )}
                                 </div>
                                 {!isViewingOtherGarden && (
                                     <button
@@ -2836,25 +2852,16 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                         id="signout-button"
                                     >
                                         <img src="/Sprites/UI/signout.png" alt="Sign Out" className="image-pixelated w-9 h-auto" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))", imageRendering: "pixelated" }} draggable={false} />
-                                    </button>
-                                )}
-                                {!isViewingOtherGarden &&
-                                    isHoveringSignOut &&
-                                    (() => {
-                                        const button = document.getElementById("signout-button");
-                                        if (!button) return null;
-                                        const rect = button.getBoundingClientRect();
-                                        return (
+                                        {isHoveringSignOut && (
                                             <div
-                                                className="fixed text-sm px-3 py-2 whitespace-nowrap font-bold pointer-events-none"
+                                                className="absolute top-full mt-2 text-sm px-3 py-2 whitespace-nowrap font-bold pointer-events-none"
                                                 style={{
                                                     backgroundColor: "#D4A574",
                                                     border: "3px solid #8B4513",
                                                     color: "#9e4539",
                                                     boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
                                                     imageRendering: "pixelated",
-                                                    top: `${rect.bottom + 8}px`,
-                                                    left: `${rect.left + rect.width / 2}px`,
+                                                    left: "50%",
                                                     transform: "translateX(-50%)",
                                                     animation: "none",
                                                     zIndex: 99999,
@@ -2862,10 +2869,11 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                             >
                                                 Sign Out
                                             </div>
-                                        );
-                                    })()}
+                                        )}
+                                    </button>
+                                )}
                             </div>
-                            <div className="text-4xl text-white font-bold" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>
+                            <div className="text-4xl text-white font-bold relative" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))", zIndex: -1 }}>
                                 ${Math.round(isViewingOtherGarden ? viewedUser?.money ?? 0 : displayedMoney).toLocaleString()}
                             </div>
                             <div className="flex flex-row items-center gap-3">
@@ -2997,30 +3005,38 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                         }}
                                                     >
                                                         <img src={displayImage} className="h-12 w-auto image-pixelated object-contain pointer-events-none" draggable={false} alt={showDollarSign ? "Sell sprout" : `${tool.type} tool`} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3))" }} />
+                                                        {hoveredToolId === tool.id && !showDollarSign && !attachedSproutId && (
+                                                            <div
+                                                                className="absolute bottom-full mb-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold pointer-events-none"
+                                                                style={{
+                                                                    backgroundColor: "#D4A574",
+                                                                    border: "3px solid #8B4513",
+                                                                    color: "#9e4539",
+                                                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                                    imageRendering: "pixelated",
+                                                                    left: "50%",
+                                                                    transform: "translateX(-50%)",
+                                                                    animation: "none",
+                                                                }}
+                                                            >
+                                                                Move and sell plants
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 {tool.price && !showDollarSign && <div className="text-base text-white font-bold">${tool.price.toLocaleString()}</div>}
-
-                                                {hoveredToolId === tool.id && !showDollarSign && !attachedSproutId && (
-                                                    <div
-                                                        className="absolute bottom-full mb-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold pointer-events-none"
-                                                        style={{
-                                                            backgroundColor: "#D4A574",
-                                                            border: "3px solid #8B4513",
-                                                            color: "#9e4539",
-                                                            boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
-                                                            imageRendering: "pixelated",
-                                                            transform: "none",
-                                                            animation: "none",
-                                                        }}
-                                                    >
-                                                        Move and sell plants
-                                                    </div>
-                                                )}
                                             </div>
                                         );
                                     })}
-                            <div className="text-xl text-white font-bold relative" onMouseEnter={() => setIsHoveringPlantCount(true)} onMouseLeave={() => setIsHoveringPlantCount(false)}>
+                            <div 
+                                className="text-xl text-white font-bold relative" 
+                                onMouseEnter={() => setIsHoveringPlantCount(true)} 
+                                onMouseLeave={() => setIsHoveringPlantCount(false)} 
+                                style={{ 
+                                    filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))",
+                                    marginLeft: isViewingOtherGarden ? "48px" : "0"
+                                }}
+                            >
                                 {(isViewingOtherGarden ? viewedPlants.length : placedSprouts.length).toLocaleString()}/{(isViewingOtherGarden ? viewedUser?.plant_limit ?? 0 : inventoryLimit).toLocaleString()}
                                 {isHoveringPlantCount && (
                                     <div
@@ -3035,6 +3051,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                             left: "50%",
                                             animation: "none",
                                             zIndex: 99999,
+                                            filter: "none",
                                         }}
                                     >
                                         Plants Planted / Max Plants
@@ -3057,6 +3074,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                         border: "3px solid #8B4513",
                                         boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
                                         imageRendering: "pixelated",
+                                        filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))",
                                     }}
                                 >
                                     Return to Your Garden
@@ -3076,17 +3094,17 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                 imageRendering: "pixelated",
                                             }}
                                         >
-                                            Start Pomodoro Session
+                                            <span style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }}>Start Pomodoro Session</span>
                                         </button>
                                     )}
 
                                     {/* Small break timer in bottom right */}
                                     {pomodoroMode === "break" && (
                                         <div className="flex flex-col items-center gap-2">
-                                            <div className="text-3xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>
+                                            <div className="text-3xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }}>
                                                 Break #{currentBreakNumber} {currentBreakNumber % 4 === 0 ? "(Long)" : "(Short)"}
                                             </div>
-                                            <div className="text-7xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>
+                                            <div className="text-7xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }}>
                                                 {formatTime(breakTime)}
                                             </div>
                                             {breakTime === 0 ? (
@@ -3102,7 +3120,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                         imageRendering: "pixelated",
                                                     }}
                                                 >
-                                                    {isClaimingReward ? "Claiming..." : `Continue (${Math.floor(25 * calculateIncomeMultiplier() * (currentBreakNumber % 4 === 0 ? 3 : 1)).toLocaleString()} coins)`}
+                                                    <span style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }}>
+                                                        {isClaimingReward ? "Claiming..." : `Continue (${Math.floor(25 * calculateIncomeMultiplier() * (currentBreakNumber % 4 === 0 ? 3 : 1)).toLocaleString()} coins)`}
+                                                    </span>
                                                 </button>
                                             ) : (
                                                 <button
@@ -3116,7 +3136,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                         imageRendering: "pixelated",
                                                     }}
                                                 >
-                                                    {isBreakRunning ? "Pause" : "Start"}
+                                                    <span style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }}>
+                                                        {isBreakRunning ? "Pause" : "Start"}
+                                                    </span>
                                                 </button>
                                             )}
                                             {/* Exit Break button - always shown */}
@@ -3131,7 +3153,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                     imageRendering: "pixelated",
                                                 }}
                                             >
-                                                Exit Pomodoro Session
+                                                <span style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }}>Exit Pomodoro Session</span>
                                             </button>
                                         </div>
                                     )}
@@ -3157,8 +3179,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
 
                         {/* Pomodoro timer display */}
                         <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-6" style={{ zIndex: 10004 }}>
-                            <div className="text-6xl font-bold text-white">Pomodoro #{currentPomodoroNumber}</div>
-                            <div className="text-9xl font-bold text-white">{formatTime(pomodoroTime)}</div>
+                            <div className="text-6xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }}>Pomodoro #{currentPomodoroNumber}</div>
+                            <div className="text-9xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }}>{formatTime(pomodoroTime)}</div>
 
                             {pomodoroCompleted ? (
                                 <button
@@ -3173,7 +3195,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                         imageRendering: "pixelated",
                                     }}
                                 >
-                                    {isClaimingReward ? "Claiming..." : `Claim ${Math.floor(125 * calculateIncomeMultiplier()).toLocaleString()} coins`}
+                                    <span style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }}>
+                                        {isClaimingReward ? "Claiming..." : `Claim ${Math.floor(125 * calculateIncomeMultiplier()).toLocaleString()} coins`}
+                                    </span>
                                 </button>
                             ) : (
                                 <button
@@ -3187,7 +3211,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                         imageRendering: "pixelated",
                                     }}
                                 >
-                                    {isPomodoroRunning ? "Pause" : "Start"}
+                                    <span style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }}>
+                                        {isPomodoroRunning ? "Pause" : "Start"}
+                                    </span>
                                 </button>
                             )}
 
@@ -3203,7 +3229,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                     imageRendering: "pixelated",
                                 }}
                             >
-                                Exit Pomodoro Session
+                                <span style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.8))" }}>Exit Pomodoro Session</span>
                             </button>
                         </div>
                     </>
@@ -3380,7 +3406,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
 
                             {/* Title */}
                             <div className="text-4xl font-bold text-white text-center mb-6" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>
-                                Visit Player
+                                Enter Player Username and Tag
                             </div>
 
                             {/* Search inputs styled like leaderboard row */}
@@ -3402,6 +3428,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                             if (e.key === "Enter" && searchUsername.trim() && searchTag.trim()) {
                                                 e.preventDefault();
                                                 setIsSearching(true);
+                                                setSearchNotFound(false);
                                                 try {
                                                     const token = await getAuthToken();
                                                     if (token) {
@@ -3410,10 +3437,14 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                             await loadVisitedGarden(user);
                                                         } else {
                                                             console.log("❌ Player not found");
+                                                            setSearchNotFound(true);
+                                                            setTimeout(() => setSearchNotFound(false), 2000);
                                                         }
                                                     }
                                                 } catch (error) {
                                                     console.error("❌ Search error:", error);
+                                                    setSearchNotFound(true);
+                                                    setTimeout(() => setSearchNotFound(false), 2000);
                                                 } finally {
                                                     setIsSearching(false);
                                                 }
@@ -3449,6 +3480,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                             if (e.key === "Enter" && searchUsername.trim() && searchTag.trim()) {
                                                 e.preventDefault();
                                                 setIsSearching(true);
+                                                setSearchNotFound(false);
                                                 try {
                                                     const token = await getAuthToken();
                                                     if (token) {
@@ -3457,10 +3489,14 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                             await loadVisitedGarden(user);
                                                         } else {
                                                             console.log("❌ Player not found");
+                                                            setSearchNotFound(true);
+                                                            setTimeout(() => setSearchNotFound(false), 2000);
                                                         }
                                                     }
                                                 } catch (error) {
                                                     console.error("❌ Search error:", error);
+                                                    setSearchNotFound(true);
+                                                    setTimeout(() => setSearchNotFound(false), 2000);
                                                 } finally {
                                                     setIsSearching(false);
                                                 }
@@ -3480,6 +3516,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                     onClick={async () => {
                                         if (!searchUsername.trim() || !searchTag.trim()) return;
                                         setIsSearching(true);
+                                        setSearchNotFound(false);
                                         try {
                                             const token = await getAuthToken();
                                             if (token) {
@@ -3488,25 +3525,29 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                     await loadVisitedGarden(user);
                                                 } else {
                                                     console.log("❌ Player not found");
+                                                    setSearchNotFound(true);
+                                                    setTimeout(() => setSearchNotFound(false), 2000);
                                                 }
                                             }
                                         } catch (error) {
                                             console.error("❌ Search error:", error);
+                                            setSearchNotFound(true);
+                                            setTimeout(() => setSearchNotFound(false), 2000);
                                         } finally {
                                             setIsSearching(false);
                                         }
                                     }}
                                     onMouseEnter={() => playSound("/Audio/interact.mp3")}
                                     disabled={isSearching || !searchUsername.trim() || !searchTag.trim()}
-                                    className={`px-8 py-4 text-2xl font-bold text-white transition-all ${isSearching || !searchUsername.trim() || !searchTag.trim() ? "opacity-50 cursor-not-allowed" : "active:scale-95 wiggle-hover"}`}
+                                    className={`px-8 py-4 text-2xl font-bold text-white transition-all ${isSearching || !searchUsername.trim() || !searchTag.trim() ? "opacity-50 cursor-not-allowed" : searchNotFound ? "active:scale-95 wiggle" : "active:scale-95 wiggle-hover"}`}
                                     style={{
-                                        backgroundColor: "#4CAF50",
-                                        border: "3px solid #2E7D32",
+                                        backgroundColor: searchNotFound ? "#F44336" : "#4CAF50",
+                                        border: searchNotFound ? "3px solid #C62828" : "3px solid #2E7D32",
                                         boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
                                         imageRendering: "pixelated",
                                     }}
                                 >
-                                    {isSearching ? "Searching..." : "Search Player"}
+                                    {searchNotFound ? "Player not found" : isSearching ? "Searching..." : "Visit Player"}
                                 </button>
                             </div>
                         </div>

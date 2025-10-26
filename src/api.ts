@@ -4,6 +4,7 @@ const API_URL = "http://localhost:8000";
 export interface UserData {
     email: string;
     username: string;
+    tag: string;
     money: number;
     plant_limit: number;
     weather: number;
@@ -64,7 +65,7 @@ class APIService {
                 const error = await response.json();
                 if (error.detail?.includes("already exists")) {
                     // Return a minimal response, caller should fetch full user data
-                    return { email, username: "", money: 0, plant_limit: 0, weather: 0 };
+                    return { email, username: "", tag: "0000", money: 0, plant_limit: 0, weather: 0 };
                 }
             }
             const error = await response.json();

@@ -30,11 +30,11 @@ export default function LandingPage() {
         backgroundRepeat: "no-repeat"
       }}
     >
-      <div className="flex flex-col items-center gap-8">
+      <div className="flex flex-col items-center gap-16">
         <img
           src="/Sprites/UI/logo.png"
           alt="Logo"
-          className="w-96 h-auto image-pixelated"
+          className="w-[675px] h-auto image-pixelated"
           style={{ cursor: "auto" }}
         />
         <button
@@ -45,14 +45,14 @@ export default function LandingPage() {
         onMouseLeave={() => setIsHovered(false)}
       >
         <img
-          src={isHovered ? "/Sprites/UI/submitButton2.png" : "/Sprites/UI/submitButton.png"}
+          src={isHovered ? "/Sprites/UI/submitButton3.png" : "/Sprites/UI/submitButton.png"}
           alt="Sign in with Google"
           className="image-pixelated absolute inset-0 object-contain"
           style={{ width: "100%", height: "100%", cursor: "pointer" }}
         />
         <span
           className="relative flex items-center gap-4 text-white font-bold text-xl pointer-events-none whitespace-nowrap z-10"
-          style={{ cursor: "pointer", marginTop: isHovered ? "22px" : "-24px" }}
+          style={{ cursor: "pointer", marginTop: isHovered ? "6px" : "-24px" }}
         >
           <img
             src="/Sprites/UI/google.png"

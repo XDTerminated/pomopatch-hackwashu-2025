@@ -54,10 +54,32 @@ body {
     }
 }
 
+@keyframes wigglePulse {
+    0%,
+    100% {
+        transform: rotate(-3deg) scale(1);
+    }
+    25% {
+        transform: rotate(3deg) scale(1.08);
+    }
+    50% {
+        transform: rotate(-3deg) scale(1);
+    }
+    75% {
+        transform: rotate(3deg) scale(0.95);
+    }
+}
+
 .wiggle {
     transform-origin: center center;
     will-change: transform;
-    animation: wiggle 0.5s ease-in-out infinite;
+    animation: wiggle 0.7s ease-in-out infinite;
+}
+
+.wiggle-pulse {
+    transform-origin: center center;
+    will-change: transform;
+    animation: wigglePulse 2.3s ease-in-out infinite;
 }
 
 .wiggle-hover {
