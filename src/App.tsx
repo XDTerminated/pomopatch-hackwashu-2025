@@ -54,12 +54,6 @@ interface Lightning {
   opacity: number;
 }
 
-interface RainSplash {
-  id: string;
-  x: number;
-  y: number;
-}
-
 interface ToolParticle {
   id: string;
   x: number;
@@ -117,7 +111,10 @@ function App() {
   const [lastCursorPosition, setLastCursorPosition] = useState({ x: 0, y: 0 });
   const [wobbleAudio, setWobbleAudio] = useState<HTMLAudioElement | null>(null);
   const [rainDrops, setRainDrops] = useState<RainDrop[]>([]);
-  const [weather, setWeather] = useState<WeatherType>("rainy"); // Start with rainy for testing
+  const [weather, setWeather] = useState<WeatherType>(() => {
+    const weatherTypes: WeatherType[] = ["sunny", "rainy", "cloudy"];
+    return weatherTypes[Math.floor(Math.random() * weatherTypes.length)];
+  });
   const [toolParticles, setToolParticles] = useState<ToolParticle[]>([]);
   const [hoveredPacketId, setHoveredPacketId] = useState<string | null>(null);
   const [customCursorPosition, setCustomCursorPosition] = useState({ x: 0, y: 0 });
@@ -127,7 +124,6 @@ function App() {
   const [inventoryLimit, setInventoryLimit] = useState(25);
   const [isHoveringPlantCount, setIsHoveringPlantCount] = useState(false);
   const [lightning, setLightning] = useState<Lightning | null>(null);
-  const [rainSplashes, setRainSplashes] = useState<RainSplash[]>([]);
 
   // Function to play sounds
   const playSound = (soundPath: string) => {
@@ -138,20 +134,6 @@ function App() {
       .catch((error) =>
         console.error("Audio play failed:", error, "Path:", soundPath)
       );
-  };
-
-  // Function to create rain splash particles
-  const createRainSplash = (xPercent: number) => {
-    const x = (window.innerWidth * xPercent) / 100;
-    const y = window.innerHeight;
-    const splashId = `splash-${Date.now()}-${Math.random()}`;
-
-    setRainSplashes((prev) => [...prev, { id: splashId, x, y }]);
-
-    // Remove splash after animation
-    setTimeout(() => {
-      setRainSplashes((prev) => prev.filter((s) => s.id !== splashId));
-    }, 300);
   };
 
   // Handle wobble sound when sprout is attached
@@ -177,9 +159,12 @@ function App() {
 
   // Handle rain audio with fade in/out
   useEffect(() => {
+    let audio: HTMLAudioElement | null = null;
+    let fadeOutInterval: ReturnType<typeof setInterval> | null = null;
+
     if (weather === "rainy") {
       console.log("Starting rain audio...");
-      const audio = new Audio("/Audio/rain.mp3");
+      audio = new Audio("/Audio/rain.mp3");
       audio.loop = true;
       audio.volume = 0;
 
@@ -192,8 +177,8 @@ function App() {
             console.log("Rain audio started successfully");
             // Fade in
             let fadeInInterval = setInterval(() => {
-              if (audio.volume < 0.05) {
-                audio.volume = Math.min(audio.volume + 0.005, 0.05);
+              if (audio && audio.volume < 0.03) {
+                audio.volume = Math.min(audio.volume + 0.003, 0.03);
               } else {
                 clearInterval(fadeInInterval);
               }
@@ -205,13 +190,82 @@ function App() {
 
             // Try to play on first user interaction
             const enableAudio = () => {
+              if (audio) {
+                audio.play()
+                  .then(() => {
+                    console.log("Rain audio started after user interaction");
+                    // Fade in
+                    let fadeInInterval = setInterval(() => {
+                      if (audio && audio.volume < 0.03) {
+                        audio.volume = Math.min(audio.volume + 0.003, 0.03);
+                      } else {
+                        clearInterval(fadeInInterval);
+                      }
+                    }, 100);
+                    document.removeEventListener('click', enableAudio);
+                  })
+                  .catch(e => console.error("Still failed:", e));
+              }
+            };
+            document.addEventListener('click', enableAudio, { once: true });
+          });
+      }
+    }
+
+    // Cleanup when weather changes or component unmounts
+    return () => {
+      if (audio) {
+        console.log("Stopping rain audio...");
+        // Fade out gradually
+        fadeOutInterval = setInterval(() => {
+          if (audio && audio.volume > 0.01) {
+            audio.volume = Math.max(audio.volume - 0.01, 0);
+          } else {
+            if (audio) {
+              audio.pause();
+              audio.currentTime = 0;
+            }
+            if (fadeOutInterval) {
+              clearInterval(fadeOutInterval);
+            }
+          }
+        }, 50);
+      }
+    };
+  }, [weather]);
+
+  // Handle birds audio during sunny weather
+  useEffect(() => {
+    if (weather === "sunny") {
+      console.log("Starting birds audio...");
+      const audio = new Audio("/Audio/birds.mp3");
+      audio.loop = true;
+      audio.volume = 0;
+
+      const playPromise = audio.play();
+
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log("Birds audio started successfully");
+            // Fade in
+            let fadeInInterval = setInterval(() => {
+              if (audio.volume < 0.15) {
+                audio.volume = Math.min(audio.volume + 0.01, 0.15);
+              } else {
+                clearInterval(fadeInInterval);
+              }
+            }, 100);
+          })
+          .catch((error) => {
+            console.error("Birds audio play failed:", error);
+            const enableAudio = () => {
               audio.play()
                 .then(() => {
-                  console.log("Rain audio started after user interaction");
-                  // Fade in
+                  console.log("Birds audio started after user interaction");
                   let fadeInInterval = setInterval(() => {
-                    if (audio.volume < 0.05) {
-                      audio.volume = Math.min(audio.volume + 0.005, 0.05);
+                    if (audio.volume < 0.15) {
+                      audio.volume = Math.min(audio.volume + 0.01, 0.15);
                     } else {
                       clearInterval(fadeInInterval);
                     }
@@ -224,10 +278,9 @@ function App() {
           });
       }
 
-      // Cleanup when weather changes or component unmounts
+      // Cleanup when weather changes
       return () => {
-        console.log("Stopping rain audio...");
-        // Fade out gradually
+        console.log("Stopping birds audio...");
         const fadeOutInterval = setInterval(() => {
           if (audio.volume > 0.01) {
             audio.volume = Math.max(audio.volume - 0.01, 0);
@@ -241,28 +294,107 @@ function App() {
     }
   }, [weather]);
 
+  // Handle wind audio randomly during cloudy weather
+  useEffect(() => {
+    if (weather === "cloudy") {
+      let timeoutId: ReturnType<typeof setTimeout>;
+      let currentAudio: HTMLAudioElement | null = null;
+      let isCleanedUp = false;
+
+      const playWind = () => {
+        if (isCleanedUp) return;
+
+        console.log("Playing wind audio...");
+        const audio = new Audio("/Audio/wind.mp3");
+        audio.volume = 0;
+        currentAudio = audio;
+
+        audio.play()
+          .then(() => {
+            console.log("Wind audio started successfully");
+            // Fade in
+            let fadeInInterval = setInterval(() => {
+              if (audio.volume < 0.5) {
+                audio.volume = Math.min(audio.volume + 0.03, 0.5);
+              } else {
+                clearInterval(fadeInInterval);
+              }
+            }, 100);
+
+            // Fade out near the end
+            audio.addEventListener('timeupdate', () => {
+              if (audio.duration - audio.currentTime < 2) {
+                if (audio.volume > 0.01) {
+                  audio.volume = Math.max(audio.volume - 0.02, 0);
+                }
+              }
+            });
+
+            // Schedule next wind sound
+            audio.addEventListener('ended', () => {
+              currentAudio = null;
+              if (!isCleanedUp) {
+                const nextWind = Math.random() * 10000 + 5000; // 5-15 seconds
+                timeoutId = setTimeout(playWind, nextWind);
+              }
+            });
+          })
+          .catch((error) => {
+            console.error("Wind audio play failed:", error);
+            // Try again on first click
+            const enableAudio = () => {
+              audio.play()
+                .then(() => {
+                  console.log("Wind audio started after user interaction");
+                  let fadeInInterval = setInterval(() => {
+                    if (audio.volume < 0.5) {
+                      audio.volume = Math.min(audio.volume + 0.03, 0.5);
+                    } else {
+                      clearInterval(fadeInInterval);
+                    }
+                  }, 100);
+                  document.removeEventListener('click', enableAudio);
+                })
+                .catch(e => console.error("Wind still failed:", e));
+            };
+            document.addEventListener('click', enableAudio, { once: true });
+          });
+      };
+
+      // Play first wind after a random delay
+      timeoutId = setTimeout(playWind, Math.random() * 5000 + 2000);
+
+      return () => {
+        console.log("Stopping wind audio...");
+        isCleanedUp = true;
+        clearTimeout(timeoutId);
+        if (currentAudio) {
+          currentAudio.pause();
+          currentAudio.currentTime = 0;
+          currentAudio = null;
+        }
+      };
+    }
+  }, [weather]);
+
   // Generate rain drops when weather changes
   useEffect(() => {
     if (weather === "rainy") {
       const drops: RainDrop[] = [];
+
       for (let i = 0; i < 50; i++) {
         const duration = 1.5 + Math.random() * 0.5;
         const delay = Math.random() * 2 - 2;
+        const xPosition = Math.random() * 100;
+
         drops.push({
           id: `rain-${i}`,
-          x: Math.random() * 100, // percentage
+          x: xPosition,
           delay: delay,
           duration: duration,
         });
-
-        // Schedule splash particle when raindrop hits ground
-        const splashTime = (delay + duration) * 1000;
-        setTimeout(() => {
-          if (weather === "rainy") {
-            createRainSplash(drops[i].x);
-          }
-        }, splashTime > 0 ? splashTime : 0);
       }
+
       setRainDrops(drops);
     } else {
       setRainDrops([]);
@@ -1016,41 +1148,6 @@ function App() {
           />
         );
       })}
-
-      {/* Rain splash particles */}
-      {rainSplashes.map((splash) => (
-        <div
-          key={splash.id}
-          className="pointer-events-none absolute"
-          style={{
-            left: splash.x,
-            top: splash.y - 10,
-            width: "8px",
-            height: "8px",
-            zIndex: 10001,
-          }}
-        >
-          {/* Create 3-4 small droplets spreading outward */}
-          {[0, 1, 2].map((i) => {
-            const angle = (Math.PI / 3) * i - Math.PI / 6;
-            const speed = 15 + Math.random() * 10;
-            return (
-              <div
-                key={i}
-                className="absolute rounded-full"
-                style={{
-                  width: "3px",
-                  height: "3px",
-                  backgroundColor: "rgba(174, 194, 224, 0.8)",
-                  animation: "rainSplash 0.3s ease-out forwards",
-                  "--splash-x": `${Math.cos(angle) * speed}px`,
-                  "--splash-y": `${Math.sin(angle) * speed}px`,
-                } as React.CSSProperties}
-              />
-            );
-          })}
-        </div>
-      ))}
 
       {/* Coin particles */}
       {coinParticles.map((coin) => {
