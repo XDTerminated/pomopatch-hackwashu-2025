@@ -490,6 +490,51 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
         return () => clearInterval(interval);
     }, [money, displayedMoney]);
 
+    // Periodic backend sync - fetch all plant data from backend every 5 seconds
+    useEffect(() => {
+        const syncWithBackend = async () => {
+            try {
+                const token = await getAuthToken();
+                if (!token) return;
+
+                const plants = await apiService.getUserPlants(userEmail, token);
+
+                // Update plants with backend data
+                const centerX = window.innerWidth / 2;
+                const centerY = window.innerHeight / 2;
+
+                setPlacedSprouts((prevSprouts) => {
+                    return plants.map((plant: Plant) => {
+                        // Try to find existing sprout to preserve x/y position
+                        const existing = prevSprouts.find((s) => s.id === `plant-${plant.plant_id}`);
+
+                        return {
+                            id: `plant-${plant.plant_id}`,
+                            x: existing ? existing.x : centerX + plant.x,
+                            y: existing ? existing.y : centerY - plant.y,
+                            seedType: plant.plant_type as SeedType,
+                            stage: plant.stage,
+                            species: plant.plant_species,
+                            rarity: plant.rarity,
+                            growth_time_remaining: plant.growth_time_remaining,
+                            fertilizer_remaining: plant.fertilizer_remaining,
+                        };
+                    });
+                });
+            } catch (error) {
+                console.error("Failed to sync with backend:", error);
+            }
+        };
+
+        // Initial sync
+        syncWithBackend();
+
+        // Sync every 5 seconds
+        const interval = setInterval(syncWithBackend, 5000);
+
+        return () => clearInterval(interval);
+    }, [userEmail, getAuthToken]);
+
     const seedPackets: SeedPacket[] = [
         {
             id: "berry",
@@ -677,6 +722,10 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
             setIsDraggingOverBackground(true);
         } else if (draggedTool) {
             setDragPosition({ x: e.clientX, y: e.clientY });
+            const sproutId = findSproutAtPosition(e.clientX, e.clientY);
+            setHoveredSproutId(sproutId);
+        } else {
+            // Check for hover even when not dragging anything
             const sproutId = findSproutAtPosition(e.clientX, e.clientY);
             setHoveredSproutId(sproutId);
         }
@@ -1233,23 +1282,93 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                     const hasCollision = isAttached && checkCollision(cursorPosition.x, cursorPosition.y, sprout.id);
                     const inUIArea = isAttached && isInUIArea(cursorPosition.x, cursorPosition.y);
 
+                    // Use ONLY what the backend actually sends us - no assumptions
+                    const stage = sprout.stage;
+                    const growthTime = sprout.growth_time_remaining;
+                    const fertilizerNeeded = sprout.fertilizer_remaining;
+
                     return (
-                        <img
+                        <div
                             key={sprout.id}
-                            src={getPlantSprite(sprout)}
-                            alt={`${sprout.seedType} sprout`}
-                            className="image-pixelated pointer-events-none absolute w-24 h-24 object-contain"
-                            draggable={false}
+                            className="pointer-events-none absolute"
                             style={{
                                 left: isAttached ? cursorPosition.x - 48 : sprout.x - 48,
                                 top: isAttached ? cursorPosition.y - 48 : sprout.y - 48,
-                                opacity: isAttached ? 0.7 : 1,
-                                filter: hasCollision || inUIArea ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)" : isHovered && !isAttached ? "brightness(1.3)" : "none",
-                                transition: isAttached ? "none" : "all 0.3s",
                                 zIndex: isAttached ? 9999 : 1,
-                                animation: isAttached ? "shake 0.15s ease-in-out infinite" : isNewlyPlaced ? "settle 0.4s ease-out" : "none",
                             }}
-                        />
+                        >
+                            <img
+                                src={getPlantSprite(sprout)}
+                                alt={`${sprout.seedType} sprout`}
+                                className="image-pixelated w-24 h-24 object-contain"
+                                draggable={false}
+                                style={{
+                                    opacity: isAttached ? 0.7 : 1,
+                                    filter: hasCollision || inUIArea ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)" : isHovered && !isAttached ? "brightness(1.3)" : "none",
+                                    transition: isAttached ? "none" : "all 0.3s",
+                                    animation: isAttached ? "shake 0.15s ease-in-out infinite" : isNewlyPlaced ? "settle 0.4s ease-out" : "none",
+                                }}
+                            />
+                            {isHovered && !isAttached && (
+                                <div
+                                    className="absolute bg-black/80 text-white text-xs px-2 py-1 rounded whitespace-nowrap"
+                                    style={{
+                                        left: "50%",
+                                        top: "-60px",
+                                        transform: "translateX(-50%)",
+                                        zIndex: 10000,
+                                        pointerEvents: "none",
+                                    }}
+                                >
+                                    <div className="flex flex-col gap-1">
+                                        {/* Plant Type & Species */}
+                                        <div className="text-white font-bold">
+                                            {sprout.seedType} - {sprout.species || "Unknown"}
+                                        </div>
+
+                                        {/* Rarity */}
+                                        {sprout.rarity !== undefined && (
+                                            <div className={sprout.rarity === 0 ? "text-gray-300" : sprout.rarity === 1 ? "text-purple-400" : "text-yellow-400"}>
+                                                ★ {sprout.rarity === 0 ? "Common" : sprout.rarity === 1 ? "Epic" : "Legendary"}
+                                            </div>
+                                        )}
+
+                                        {/* Stage */}
+                                        <div className="text-purple-400">
+                                            🌿 Stage {stage ?? 0}
+                                        </div>
+
+                                        {/* Growth Timer - show in minutes */}
+                                        {growthTime !== null && growthTime !== undefined && growthTime > 0 && (
+                                            <div className="text-blue-400">
+                                                🕐 {Math.ceil(growthTime / 60)} min
+                                            </div>
+                                        )}
+
+                                        {/* Fertilizer - show if backend says it needs fertilizer */}
+                                        {fertilizerNeeded !== null && fertilizerNeeded !== undefined && fertilizerNeeded > 0 && (
+                                            <div className="text-yellow-400">
+                                                🌱 Needs {fertilizerNeeded} Fertilizer{fertilizerNeeded !== 1 ? "s" : ""}
+                                            </div>
+                                        )}
+
+                                        {/* Water status - only for stage 0 */}
+                                        {stage === 0 && (
+                                            <div className={growthTime === null ? "text-green-400" : "text-gray-400"}>
+                                                💧 {growthTime === null ? "Needs Water" : "Watered"}
+                                            </div>
+                                        )}
+
+                                        {/* Fully grown indicator */}
+                                        {stage === 2 && (
+                                            <div className="text-green-400">
+                                                ✨ Ready to Sell!
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     );
                 })}
 
