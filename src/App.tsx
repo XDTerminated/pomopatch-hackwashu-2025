@@ -168,6 +168,9 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
     const [searchUsername, setSearchUsername] = useState("");
     const [searchTag, setSearchTag] = useState("");
     const [isSearching, setIsSearching] = useState(false);
+    const [isViewingOtherGarden, setIsViewingOtherGarden] = useState(false);
+    const [viewedUser, setViewedUser] = useState<UserData | null>(null);
+    const [viewedPlants, setViewedPlants] = useState<PlacedSprout[]>([]);
     const [isHoveringSignOut, setIsHoveringSignOut] = useState(false);
 
     // Pomodoro timer state
@@ -777,6 +780,47 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
         }
     };
 
+    // Load another user's garden
+    const loadVisitedGarden = async (user: UserData) => {
+        try {
+            const token = await getAuthToken();
+            if (!token) return;
+
+            const plants = await apiService.getUserPlants(user.email, token);
+
+            // Convert backend plants to PlacedSprouts (same as initialization)
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+
+            const convertedPlants = plants.map((plant) => ({
+                id: `plant-${plant.plant_id}`,
+                x: centerX + plant.x,
+                y: centerY - plant.y,
+                seedType: plant.plant_type as SeedType,
+                stage: plant.stage,
+                species: plant.plant_species,
+                rarity: plant.rarity,
+                growth_time_remaining: plant.growth_time_remaining,
+                fertilizer_remaining: plant.fertilizer_remaining,
+            }));
+
+            setViewedUser(user);
+            setViewedPlants(convertedPlants);
+            setIsViewingOtherGarden(true);
+            setShowSearchModal(false);
+            console.log("✅ Loaded garden for:", user.username || user.email);
+        } catch (error) {
+            console.error("❌ Failed to load user's garden:", error);
+        }
+    };
+
+    // Return to own garden
+    const returnToOwnGarden = () => {
+        setIsViewingOtherGarden(false);
+        setViewedUser(null);
+        setViewedPlants([]);
+    };
+
     const seedPackets: SeedPacket[] = [
         {
             id: "berry",
@@ -945,7 +989,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
     };
 
     const findSproutAtPosition = (x: number, y: number): string | null => {
-        const sprout = placedSprouts.find((s) => {
+        const sproutList = isViewingOtherGarden ? viewedPlants : placedSprouts;
+        const sprout = sproutList.find((s) => {
             const dx = Math.abs(s.x - x);
             const dy = Math.abs(s.y - y);
             return dx < 48 && dy < 48;
@@ -2286,10 +2331,10 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                     }}
                 />
 
-                {placedSprouts.map((sprout) => {
-                    const isAttached = attachedSproutId === sprout.id;
+                {(isViewingOtherGarden ? viewedPlants : placedSprouts).map((sprout) => {
+                    const isAttached = !isViewingOtherGarden && attachedSproutId === sprout.id;
                     const isHovered = hoveredSproutId === sprout.id;
-                    const isNewlyPlaced = newlyPlacedSproutId === sprout.id;
+                    const isNewlyPlaced = !isViewingOtherGarden && newlyPlacedSproutId === sprout.id;
                     const hasCollision = isAttached && checkCollision(cursorPosition.x, cursorPosition.y, sprout.id);
                     const inUIArea = isAttached && isInUIArea(cursorPosition.y);
 
@@ -2381,7 +2426,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                 {hoveredSproutId &&
                     pomodoroMode !== "work" &&
                     (() => {
-                        const hoveredSprout = placedSprouts.find((s) => s.id === hoveredSproutId);
+                        const hoveredSprout = (isViewingOtherGarden ? viewedPlants : placedSprouts).find((s) => s.id === hoveredSproutId);
                         if (!hoveredSprout) return null;
 
                         const stage = hoveredSprout.stage;
@@ -2556,193 +2601,197 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                 <div className="h-full w-full flex flex-col justify-between relative z-10">
                     <div className="flex flex-row justify-between h-fit w-full p-8">
                         <div className="flex flex-row gap-4 items-start">
-                            <div className="relative w-fit h-fit">
-                                <img src="/Sprites/UI/PacketUI.png" className="image-pixelated w-[300px] h-auto" alt="packet ui" draggable={false} />
-                                <ol className="absolute inset-0 flex flex-row justify-between items-center gap-3 px-10">
-                                    {seedPackets.map((seed) => {
-                                        const canAfford = money >= seed.price;
-                                        const isHovered = hoveredPacketId === seed.id;
-                                        return (
-                                            <li
-                                                key={seed.id}
-                                                onMouseDown={canAfford ? handleSeedMouseDown(seed) : () => playSound("/Audio/error.mp3")}
-                                                onClick={canAfford ? handleSeedClick(seed) : () => playSound("/Audio/error.mp3")}
-                                                onMouseEnter={() => {
-                                                    playSound("/Audio/interact.mp3");
-                                                    setHoveredPacketId(seed.id);
-                                                }}
-                                                onMouseLeave={() => setHoveredPacketId(null)}
-                                                className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all ${draggedSeed?.id === seed.id || selectedSeed?.id === seed.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : canAfford ? "opacity-100 cursor-grab active:cursor-grabbing active:scale-95" : "opacity-30 cursor-not-allowed"} ${!draggedSeed && canAfford ? "wiggle-hover" : ""}`}
-                                                style={{
-                                                    filter: !canAfford ? "grayscale(100%)" : "none",
-                                                    flexShrink: 0,
-                                                }}
-                                            >
-                                                <img src={seed.image} className="w-fit h-full image-pixelated object-contain pointer-events-none" alt={`${seed.type} packet`} draggable={false} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3))" }} />
-
-                                                {/* Seed packet tooltip */}
-                                                {isHovered && !draggedSeed && !selectedSeed && (
-                                                    <div
-                                                        className="absolute bottom-full mb-2 text-sm px-3 py-1 whitespace-nowrap z-50 font-bold pointer-events-none"
+                            {!isViewingOtherGarden && (
+                                <>
+                                    <div className="relative w-fit h-fit">
+                                        <img src="/Sprites/UI/PacketUI.png" className="image-pixelated w-[300px] h-auto" alt="packet ui" draggable={false} />
+                                        <ol className="absolute inset-0 flex flex-row justify-between items-center gap-3 px-10">
+                                            {seedPackets.map((seed) => {
+                                                const canAfford = money >= seed.price;
+                                                const isHovered = hoveredPacketId === seed.id;
+                                                return (
+                                                    <li
+                                                        key={seed.id}
+                                                        onMouseDown={canAfford ? handleSeedMouseDown(seed) : () => playSound("/Audio/error.mp3")}
+                                                        onClick={canAfford ? handleSeedClick(seed) : () => playSound("/Audio/error.mp3")}
+                                                        onMouseEnter={() => {
+                                                            playSound("/Audio/interact.mp3");
+                                                            setHoveredPacketId(seed.id);
+                                                        }}
+                                                        onMouseLeave={() => setHoveredPacketId(null)}
+                                                        className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all ${draggedSeed?.id === seed.id || selectedSeed?.id === seed.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : canAfford ? "opacity-100 cursor-grab active:cursor-grabbing active:scale-95" : "opacity-30 cursor-not-allowed"} ${!draggedSeed && canAfford ? "wiggle-hover" : ""}`}
                                                         style={{
-                                                            backgroundColor: "#D4A574",
-                                                            border: "3px solid #8B4513",
-                                                            color: "#9e4539",
-                                                            boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
-                                                            imageRendering: "pixelated",
+                                                            filter: !canAfford ? "grayscale(100%)" : "none",
+                                                            flexShrink: 0,
                                                         }}
                                                     >
-                                                        {seed.type === "Berry" ? "Berry Seeds" : seed.type === "Fungi" ? "Mushroom Seeds" : "Rose Seeds"}
-                                                    </div>
-                                                )}
+                                                        <img src={seed.image} className="w-fit h-full image-pixelated object-contain pointer-events-none" alt={`${seed.type} packet`} draggable={false} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3))" }} />
 
-                                                {isHovered && plantVarieties[seed.id] && (
-                                                    <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
-                                                        {plantVarieties[seed.id].map((rarityGroup, rarityIndex) => {
-                                                            // Determine position based on number of rarity groups
-                                                            const totalGroups = plantVarieties[seed.id].length;
-                                                            let leftPosition = "50%";
-                                                            let transform = "translateX(-50%)";
+                                                        {/* Seed packet tooltip */}
+                                                        {isHovered && !draggedSeed && !selectedSeed && (
+                                                            <div
+                                                                className="absolute bottom-full mb-2 text-sm px-3 py-1 whitespace-nowrap z-50 font-bold pointer-events-none"
+                                                                style={{
+                                                                    backgroundColor: "#D4A574",
+                                                                    border: "3px solid #8B4513",
+                                                                    color: "#9e4539",
+                                                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                                    imageRendering: "pixelated",
+                                                                }}
+                                                            >
+                                                                {seed.type === "Berry" ? "Berry Seeds" : seed.type === "Fungi" ? "Mushroom Seeds" : "Rose Seeds"}
+                                                            </div>
+                                                        )}
 
-                                                            if (totalGroups === 3) {
-                                                                if (rarityIndex === 0) {
-                                                                    leftPosition = "-50%";
-                                                                    transform = "none";
-                                                                } else if (rarityIndex === 1) {
-                                                                    leftPosition = "50%";
-                                                                    transform = "translateX(-50%)";
-                                                                } else {
-                                                                    leftPosition = "auto";
-                                                                    transform = "none";
+                                                        {isHovered && plantVarieties[seed.id] && (
+                                                            <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
+                                                                {plantVarieties[seed.id].map((rarityGroup, rarityIndex) => {
+                                                                    // Determine position based on number of rarity groups
+                                                                    const totalGroups = plantVarieties[seed.id].length;
+                                                                    let leftPosition = "50%";
+                                                                    let transform = "translateX(-50%)";
+
+                                                                    if (totalGroups === 3) {
+                                                                        if (rarityIndex === 0) {
+                                                                            leftPosition = "-50%";
+                                                                            transform = "none";
+                                                                        } else if (rarityIndex === 1) {
+                                                                            leftPosition = "50%";
+                                                                            transform = "translateX(-50%)";
+                                                                        } else {
+                                                                            leftPosition = "auto";
+                                                                            transform = "none";
+                                                                        }
+                                                                    }
+
+                                                                    // Get current variety to show (swap if multiple)
+                                                                    const varietyKey = `${seed.id}-${rarityIndex}`;
+                                                                    const varietyIndex = currentVarietyIndices[varietyKey] || 0;
+                                                                    const currentVariety = rarityGroup.varieties[varietyIndex];
+
+                                                                    // Determine plant type for sprite path
+                                                                    let plantType = seed.id;
+                                                                    if (plantType === "rose") plantType = "roses";
+
+                                                                    return (
+                                                                        <div
+                                                                            key={rarityIndex}
+                                                                            className="absolute flex flex-col items-center gap-1"
+                                                                            style={{
+                                                                                top: "100%",
+                                                                                left: leftPosition !== "auto" ? leftPosition : undefined,
+                                                                                right: leftPosition === "auto" ? "-50%" : undefined,
+                                                                                transform: transform !== "none" ? transform : undefined,
+                                                                                filter: !canAfford ? "grayscale(100%)" : "none",
+                                                                            }}
+                                                                        >
+                                                                            <img src={`/Sprites/${plantType}/${currentVariety}_2.png`} className="w-12 h-12 image-pixelated object-cover" alt={currentVariety} draggable={false} style={{ width: "48px", height: "48px" }} />
+                                                                            <div className="text-xs text-white font-bold whitespace-nowrap">{rarityGroup.chance}%</div>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                        <div className={`text-sm pointer-events-none font-bold ${!canAfford ? "text-red-600" : ""}`} style={{ color: !canAfford ? "" : "#9e4539" }}>
+                                                            ${seed.price}
+                                                        </div>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ol>
+                                    </div>
+
+                                    <div className="relative w-fit h-fit">
+                                        <img src="/Sprites/UI/PacketUI.png" className="image-pixelated w-[300px] h-auto" alt="tool packet ui" draggable={false} />
+                                        <ol className="absolute inset-0 flex flex-row justify-between items-center gap-3 px-10">
+                                            {tools
+                                                .filter((tool) => tool.type === "WateringCan" || tool.type === "Fertilizer" || tool.type === "Backpack")
+                                                .map((tool) => {
+                                                    return (
+                                                        <li
+                                                            key={tool.id}
+                                                            onMouseDown={!attachedSproutId && tool.type !== "Backpack" ? handleToolMouseDown(tool) : undefined}
+                                                            onClick={async (e) => {
+                                                                if (tool.type === "Backpack" && money >= (tool.price || 0)) {
+                                                                    try {
+                                                                        const upgradeCost = tool.price || 0;
+                                                                        // Update client side first for instant feedback
+                                                                        setMoney(money - upgradeCost);
+                                                                        setInventoryLimit(inventoryLimit + 25);
+                                                                        playSound("/Audio/interact.mp3");
+
+                                                                        // Get fresh token before API call
+                                                                        const token = await getAuthToken();
+                                                                        if (!token) throw new Error("Failed to get auth token");
+
+                                                                        // Then sync with backend
+                                                                        const result = await apiService.increasePlantLimit(userEmail || "", token);
+                                                                        console.log("Plant limit upgrade result:", result);
+                                                                        // Update with backend values to ensure sync
+                                                                        setMoney(result.new_balance ?? result.money ?? money - upgradeCost);
+                                                                        setInventoryLimit(result.new_plant_limit ?? result.plant_limit ?? inventoryLimit + 25);
+                                                                    } catch (error) {
+                                                                        console.error("Failed to upgrade plant limit:", error);
+                                                                        // Rollback on error
+                                                                        setMoney(money);
+                                                                        setInventoryLimit(inventoryLimit);
+                                                                        playSound("/Audio/error.mp3");
+                                                                    }
+                                                                } else if (tool.type === "Backpack") {
+                                                                    playSound("/Audio/error.mp3");
+                                                                } else if (!attachedSproutId) {
+                                                                    // Handle click-to-select for water/fertilizer
+                                                                    handleToolClick(tool)(e);
                                                                 }
-                                                            }
-
-                                                            // Get current variety to show (swap if multiple)
-                                                            const varietyKey = `${seed.id}-${rarityIndex}`;
-                                                            const varietyIndex = currentVarietyIndices[varietyKey] || 0;
-                                                            const currentVariety = rarityGroup.varieties[varietyIndex];
-
-                                                            // Determine plant type for sprite path
-                                                            let plantType = seed.id;
-                                                            if (plantType === "rose") plantType = "roses";
-
-                                                            return (
-                                                                <div
-                                                                    key={rarityIndex}
-                                                                    className="absolute flex flex-col items-center gap-1"
-                                                                    style={{
-                                                                        top: "100%",
-                                                                        left: leftPosition !== "auto" ? leftPosition : undefined,
-                                                                        right: leftPosition === "auto" ? "-50%" : undefined,
-                                                                        transform: transform !== "none" ? transform : undefined,
-                                                                        filter: !canAfford ? "grayscale(100%)" : "none",
-                                                                    }}
-                                                                >
-                                                                    <img src={`/Sprites/${plantType}/${currentVariety}_2.png`} className="w-12 h-12 image-pixelated object-cover" alt={currentVariety} draggable={false} style={{ width: "48px", height: "48px" }} />
-                                                                    <div className="text-xs text-white font-bold whitespace-nowrap">{rarityGroup.chance}%</div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                )}
-                                                <div className={`text-sm pointer-events-none font-bold ${!canAfford ? "text-red-600" : ""}`} style={{ color: !canAfford ? "" : "#9e4539" }}>
-                                                    ${seed.price}
-                                                </div>
-                                            </li>
-                                        );
-                                    })}
-                                </ol>
-                            </div>
-
-                            <div className="relative w-fit h-fit">
-                                <img src="/Sprites/UI/PacketUI.png" className="image-pixelated w-[300px] h-auto" alt="tool packet ui" draggable={false} />
-                                <ol className="absolute inset-0 flex flex-row justify-between items-center gap-3 px-10">
-                                    {tools
-                                        .filter((tool) => tool.type === "WateringCan" || tool.type === "Fertilizer" || tool.type === "Backpack")
-                                        .map((tool) => {
-                                            return (
-                                                <li
-                                                    key={tool.id}
-                                                    onMouseDown={!attachedSproutId && tool.type !== "Backpack" ? handleToolMouseDown(tool) : undefined}
-                                                    onClick={async (e) => {
-                                                        if (tool.type === "Backpack" && money >= (tool.price || 0)) {
-                                                            try {
-                                                                const upgradeCost = tool.price || 0;
-                                                                // Update client side first for instant feedback
-                                                                setMoney(money - upgradeCost);
-                                                                setInventoryLimit(inventoryLimit + 25);
-                                                                playSound("/Audio/interact.mp3");
-
-                                                                // Get fresh token before API call
-                                                                const token = await getAuthToken();
-                                                                if (!token) throw new Error("Failed to get auth token");
-
-                                                                // Then sync with backend
-                                                                const result = await apiService.increasePlantLimit(userEmail || "", token);
-                                                                console.log("Plant limit upgrade result:", result);
-                                                                // Update with backend values to ensure sync
-                                                                setMoney(result.new_balance ?? result.money ?? money - upgradeCost);
-                                                                setInventoryLimit(result.new_plant_limit ?? result.plant_limit ?? inventoryLimit + 25);
-                                                            } catch (error) {
-                                                                console.error("Failed to upgrade plant limit:", error);
-                                                                // Rollback on error
-                                                                setMoney(money);
-                                                                setInventoryLimit(inventoryLimit);
-                                                                playSound("/Audio/error.mp3");
-                                                            }
-                                                        } else if (tool.type === "Backpack") {
-                                                            playSound("/Audio/error.mp3");
-                                                        } else if (!attachedSproutId) {
-                                                            // Handle click-to-select for water/fertilizer
-                                                            handleToolClick(tool)(e);
-                                                        }
-                                                    }}
-                                                    onMouseEnter={() => {
-                                                        if (!attachedSproutId) {
-                                                            playSound("/Audio/interact.mp3");
-                                                            setHoveredToolId(tool.id);
-                                                        }
-                                                    }}
-                                                    onMouseLeave={() => {
-                                                        setHoveredToolId(null);
-                                                    }}
-                                                    className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all relative ${tool.type === "Backpack" ? (money >= (tool.price || 0) ? "opacity-100 cursor-pointer active:scale-95" : "opacity-30 cursor-not-allowed") : draggedTool?.id === tool.id || selectedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : attachedSproutId ? "opacity-30 cursor-not-allowed" : "opacity-100 cursor-grab active:cursor-grabbing active:scale-95"} ${!draggedTool && !attachedSproutId && (tool.type === "Backpack" ? money >= (tool.price || 0) : true) ? "wiggle-hover" : ""}`}
-                                                    style={{
-                                                        pointerEvents: tool.type === "Backpack" ? "auto" : attachedSproutId ? "none" : "auto",
-                                                        filter: tool.type === "Backpack" && money < (tool.price || 0) ? "grayscale(100%)" : "none",
-                                                        flexShrink: 0,
-                                                    }}
-                                                >
-                                                    <div className="h-full flex items-center justify-center">
-                                                        <img src={tool.image} className={`image-pixelated object-contain pointer-events-none ${tool.type === "Backpack" ? "w-10 h-10" : "w-fit h-full"}`} alt={`${tool.type} tool`} draggable={false} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3))" }} />
-                                                    </div>
-                                                    <div className="text-sm pointer-events-none font-bold" style={{ color: "#9e4539" }}>
-                                                        ${tool.price?.toLocaleString()}
-                                                    </div>
-
-                                                    {hoveredToolId === tool.id && (tool.type !== "Backpack" ? !attachedSproutId : true) && (
-                                                        <div
-                                                            className="absolute top-full mt-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold pointer-events-none"
+                                                            }}
+                                                            onMouseEnter={() => {
+                                                                if (!attachedSproutId) {
+                                                                    playSound("/Audio/interact.mp3");
+                                                                    setHoveredToolId(tool.id);
+                                                                }
+                                                            }}
+                                                            onMouseLeave={() => {
+                                                                setHoveredToolId(null);
+                                                            }}
+                                                            className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all relative ${tool.type === "Backpack" ? (money >= (tool.price || 0) ? "opacity-100 cursor-pointer active:scale-95" : "opacity-30 cursor-not-allowed") : draggedTool?.id === tool.id || selectedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : attachedSproutId ? "opacity-30 cursor-not-allowed" : "opacity-100 cursor-grab active:cursor-grabbing active:scale-95"} ${!draggedTool && !attachedSproutId && (tool.type === "Backpack" ? money >= (tool.price || 0) : true) ? "wiggle-hover" : ""}`}
                                                             style={{
-                                                                backgroundColor: "#D4A574",
-                                                                border: "3px solid #8B4513",
-                                                                color: "#9e4539",
-                                                                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
-                                                                imageRendering: "pixelated",
-                                                                transform: "none",
-                                                                animation: "none",
+                                                                pointerEvents: tool.type === "Backpack" ? "auto" : attachedSproutId ? "none" : "auto",
+                                                                filter: tool.type === "Backpack" && money < (tool.price || 0) ? "grayscale(100%)" : "none",
+                                                                flexShrink: 0,
                                                             }}
                                                         >
-                                                            {tool.type === "WateringCan" && "Enables sprouts to grow"}
-                                                            {tool.type === "Fertilizer" && "Enables growth to maturity"}
-                                                            {tool.type === "Backpack" && `Extra Plant Slots (+25)`}
-                                                        </div>
-                                                    )}
-                                                </li>
-                                            );
-                                        })}
-                                </ol>
-                            </div>
+                                                            <div className="h-full flex items-center justify-center">
+                                                                <img src={tool.image} className={`image-pixelated object-contain pointer-events-none ${tool.type === "Backpack" ? "w-10 h-10" : "w-fit h-full"}`} alt={`${tool.type} tool`} draggable={false} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3))" }} />
+                                                            </div>
+                                                            <div className="text-sm pointer-events-none font-bold" style={{ color: "#9e4539" }}>
+                                                                ${tool.price?.toLocaleString()}
+                                                            </div>
+
+                                                            {hoveredToolId === tool.id && (tool.type !== "Backpack" ? !attachedSproutId : true) && (
+                                                                <div
+                                                                    className="absolute top-full mt-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold pointer-events-none"
+                                                                    style={{
+                                                                        backgroundColor: "#D4A574",
+                                                                        border: "3px solid #8B4513",
+                                                                        color: "#9e4539",
+                                                                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                                        imageRendering: "pixelated",
+                                                                        transform: "none",
+                                                                        animation: "none",
+                                                                    }}
+                                                                >
+                                                                    {tool.type === "WateringCan" && "Enables sprouts to grow"}
+                                                                    {tool.type === "Fertilizer" && "Enables growth to maturity"}
+                                                                    {tool.type === "Backpack" && `Extra Plant Slots (+25)`}
+                                                                </div>
+                                                            )}
+                                                        </li>
+                                                    );
+                                                })}
+                                        </ol>
+                                    </div>
+                                </>
+                            )}
 
                             <div className="flex flex-col items-center relative self-center ml-8 -mt-6" onMouseEnter={() => setIsHoveringWeather(true)} onMouseLeave={() => setIsHoveringWeather(false)}>
                                 <img src={getWeatherIcon()} alt={`${weather} weather`} className="image-pixelated w-12 h-12 object-contain" draggable={false} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3))" }} />
@@ -2771,23 +2820,26 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                         <div className="flex flex-col items-end gap-2">
                             <div className="flex flex-row items-center gap-3">
                                 <div className="text-5xl font-bold" style={{ color: "#daa87c", filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>
-                                    {userEmail.split("@")[0]}
+                                    {isViewingOtherGarden ? viewedUser?.username || viewedUser?.email.split("@")[0] : userEmail.split("@")[0]}
                                 </div>
-                                <button
-                                    onClick={async () => {
-                                        await onSignOut();
-                                    }}
-                                    onMouseEnter={() => {
-                                        setIsHoveringSignOut(true);
-                                        playSound("/Audio/interact.mp3");
-                                    }}
-                                    onMouseLeave={() => setIsHoveringSignOut(false)}
-                                    className="transition-all active:scale-95 wiggle-hover flex items-center justify-center relative"
-                                    id="signout-button"
-                                >
-                                    <img src="/Sprites/UI/signout.png" alt="Sign Out" className="image-pixelated w-9 h-auto" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))", imageRendering: "pixelated" }} draggable={false} />
-                                </button>
-                                {isHoveringSignOut &&
+                                {!isViewingOtherGarden && (
+                                    <button
+                                        onClick={async () => {
+                                            await onSignOut();
+                                        }}
+                                        onMouseEnter={() => {
+                                            setIsHoveringSignOut(true);
+                                            playSound("/Audio/interact.mp3");
+                                        }}
+                                        onMouseLeave={() => setIsHoveringSignOut(false)}
+                                        className="transition-all active:scale-95 wiggle-hover flex items-center justify-center relative"
+                                        id="signout-button"
+                                    >
+                                        <img src="/Sprites/UI/signout.png" alt="Sign Out" className="image-pixelated w-9 h-auto" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))", imageRendering: "pixelated" }} draggable={false} />
+                                    </button>
+                                )}
+                                {!isViewingOtherGarden &&
+                                    isHoveringSignOut &&
                                     (() => {
                                         const button = document.getElementById("signout-button");
                                         if (!button) return null;
@@ -2814,7 +2866,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                     })()}
                             </div>
                             <div className="text-4xl text-white font-bold" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>
-                                ${Math.round(displayedMoney).toLocaleString()}
+                                ${Math.round(isViewingOtherGarden ? viewedUser?.money ?? 0 : displayedMoney).toLocaleString()}
                             </div>
                             <div className="flex flex-row items-center gap-3">
                                 <button
@@ -2913,62 +2965,63 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                     </div>
                     <div className="p-8 flex flex-row justify-between items-end">
                         <div className="flex flex-row gap-4 items-end">
-                            {tools
-                                .filter((tool) => tool.type === "Spade")
-                                .map((tool) => {
-                                    const showDollarSign = tool.type === "Spade" && attachedSproutId;
-                                    const displayImage = showDollarSign ? "/Sprites/UI/dollarsign.png" : tool.image;
+                            {!isViewingOtherGarden &&
+                                tools
+                                    .filter((tool) => tool.type === "Spade")
+                                    .map((tool) => {
+                                        const showDollarSign = tool.type === "Spade" && attachedSproutId;
+                                        const displayImage = showDollarSign ? "/Sprites/UI/dollarsign.png" : tool.image;
 
-                                    return (
-                                        <div key={tool.id} className="relative w-fit h-fit flex flex-col items-center gap-1">
-                                            <div className="relative w-fit h-fit">
-                                                <img src="/Sprites/UI/SpadeUI.png" className="image-pixelated w-[100px] h-auto" alt="tool ui background" draggable={false} />
-                                                <div
-                                                    onMouseDown={!attachedSproutId ? handleToolMouseDown(tool) : undefined}
-                                                    onClick={!attachedSproutId ? handleToolClick(tool) : undefined}
-                                                    onMouseEnter={() => {
-                                                        if (showDollarSign) {
-                                                            setIsHoveringDollarSign(true);
-                                                        } else if (!attachedSproutId) {
-                                                            playSound("/Audio/interact.mp3");
-                                                            setHoveredToolId(tool.id);
-                                                        }
-                                                    }}
-                                                    onMouseLeave={() => {
-                                                        if (showDollarSign) setIsHoveringDollarSign(false);
-                                                        setHoveredToolId(null);
-                                                    }}
-                                                    className={`absolute inset-0 flex justify-center items-center active:scale-95 transition-all ${attachedSproutId && !showDollarSign ? "opacity-30 cursor-not-allowed" : showDollarSign ? "opacity-100 cursor-pointer" : draggedTool?.id === tool.id || selectedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing" : "opacity-100 cursor-grab active:cursor-grabbing"} ${!draggedTool && !attachedSproutId ? "wiggle-hover" : ""} ${showDollarSign ? "wiggle-hover" : ""}`}
-                                                    style={{
-                                                        pointerEvents: attachedSproutId && !showDollarSign ? "none" : "auto",
-                                                    }}
-                                                >
-                                                    <img src={displayImage} className="h-12 w-auto image-pixelated object-contain pointer-events-none" draggable={false} alt={showDollarSign ? "Sell sprout" : `${tool.type} tool`} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3))" }} />
+                                        return (
+                                            <div key={tool.id} className="relative w-fit h-fit flex flex-col items-center gap-1">
+                                                <div className="relative w-fit h-fit">
+                                                    <img src="/Sprites/UI/SpadeUI.png" className="image-pixelated w-[100px] h-auto" alt="tool ui background" draggable={false} />
+                                                    <div
+                                                        onMouseDown={!attachedSproutId ? handleToolMouseDown(tool) : undefined}
+                                                        onClick={!attachedSproutId ? handleToolClick(tool) : undefined}
+                                                        onMouseEnter={() => {
+                                                            if (showDollarSign) {
+                                                                setIsHoveringDollarSign(true);
+                                                            } else if (!attachedSproutId) {
+                                                                playSound("/Audio/interact.mp3");
+                                                                setHoveredToolId(tool.id);
+                                                            }
+                                                        }}
+                                                        onMouseLeave={() => {
+                                                            if (showDollarSign) setIsHoveringDollarSign(false);
+                                                            setHoveredToolId(null);
+                                                        }}
+                                                        className={`absolute inset-0 flex justify-center items-center active:scale-95 transition-all ${attachedSproutId && !showDollarSign ? "opacity-30 cursor-not-allowed" : showDollarSign ? "opacity-100 cursor-pointer" : draggedTool?.id === tool.id || selectedTool?.id === tool.id ? "opacity-50 cursor-grab active:cursor-grabbing" : "opacity-100 cursor-grab active:cursor-grabbing"} ${!draggedTool && !attachedSproutId ? "wiggle-hover" : ""} ${showDollarSign ? "wiggle-hover" : ""}`}
+                                                        style={{
+                                                            pointerEvents: attachedSproutId && !showDollarSign ? "none" : "auto",
+                                                        }}
+                                                    >
+                                                        <img src={displayImage} className="h-12 w-auto image-pixelated object-contain pointer-events-none" draggable={false} alt={showDollarSign ? "Sell sprout" : `${tool.type} tool`} style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3))" }} />
+                                                    </div>
                                                 </div>
+                                                {tool.price && !showDollarSign && <div className="text-base text-white font-bold">${tool.price.toLocaleString()}</div>}
+
+                                                {hoveredToolId === tool.id && !showDollarSign && !attachedSproutId && (
+                                                    <div
+                                                        className="absolute bottom-full mb-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold pointer-events-none"
+                                                        style={{
+                                                            backgroundColor: "#D4A574",
+                                                            border: "3px solid #8B4513",
+                                                            color: "#9e4539",
+                                                            boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                            imageRendering: "pixelated",
+                                                            transform: "none",
+                                                            animation: "none",
+                                                        }}
+                                                    >
+                                                        Move and sell plants
+                                                    </div>
+                                                )}
                                             </div>
-                                            {tool.price && !showDollarSign && <div className="text-base text-white font-bold">${tool.price.toLocaleString()}</div>}
-
-                                            {hoveredToolId === tool.id && !showDollarSign && !attachedSproutId && (
-                                                <div
-                                                    className="absolute bottom-full mb-2 text-sm px-3 py-2 whitespace-nowrap z-50 font-bold pointer-events-none"
-                                                    style={{
-                                                        backgroundColor: "#D4A574",
-                                                        border: "3px solid #8B4513",
-                                                        color: "#9e4539",
-                                                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
-                                                        imageRendering: "pixelated",
-                                                        transform: "none",
-                                                        animation: "none",
-                                                    }}
-                                                >
-                                                    Move and sell plants
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
+                                        );
+                                    })}
                             <div className="text-xl text-white font-bold relative" onMouseEnter={() => setIsHoveringPlantCount(true)} onMouseLeave={() => setIsHoveringPlantCount(false)}>
-                                {placedSprouts.length.toLocaleString()}/{inventoryLimit.toLocaleString()}
+                                {(isViewingOtherGarden ? viewedPlants.length : placedSprouts.length).toLocaleString()}/{(isViewingOtherGarden ? viewedUser?.plant_limit ?? 0 : inventoryLimit).toLocaleString()}
                                 {isHoveringPlantCount && (
                                     <div
                                         className="absolute bottom-full mb-2 text-sm px-3 py-2 whitespace-nowrap font-bold pointer-events-none"
@@ -2990,10 +3043,13 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                             </div>
                         </div>
                         <div className="flex flex-row gap-4 items-end">
-                            {/* Pomodoro/Break button */}
-                            {pomodoroMode === "none" && (
+                            {/* Return to Garden button when viewing another user */}
+                            {isViewingOtherGarden ? (
                                 <button
-                                    onClick={handleStartPomodoro}
+                                    onClick={() => {
+                                        returnToOwnGarden();
+                                        playSound("/Audio/interact.mp3");
+                                    }}
                                     onMouseEnter={() => playSound("/Audio/interact.mp3")}
                                     className="px-6 py-3 text-xl font-bold text-white transition-all active:scale-95 wiggle-hover"
                                     style={{
@@ -3003,39 +3059,16 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                         imageRendering: "pixelated",
                                     }}
                                 >
-                                    Start Pomodoro Session
+                                    Return to Your Garden
                                 </button>
-                            )}
-
-                            {/* Small break timer in bottom right */}
-                            {pomodoroMode === "break" && (
-                                <div className="flex flex-col items-center gap-2">
-                                    <div className="text-3xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>
-                                        Break #{currentBreakNumber} {currentBreakNumber % 4 === 0 ? "(Long)" : "(Short)"}
-                                    </div>
-                                    <div className="text-7xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>
-                                        {formatTime(breakTime)}
-                                    </div>
-                                    {breakTime === 0 ? (
+                            ) : (
+                                <>
+                                    {/* Pomodoro/Break button */}
+                                    {pomodoroMode === "none" && (
                                         <button
-                                            onClick={handleClaimBreakReward}
-                                            onMouseEnter={() => !isClaimingReward && playSound("/Audio/interact.mp3")}
-                                            disabled={isClaimingReward}
-                                            className={`px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 ${isClaimingReward ? "opacity-50 cursor-not-allowed" : "wiggle-hover"}`}
-                                            style={{
-                                                backgroundColor: "#4CAF50",
-                                                border: "3px solid #2E7D32",
-                                                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
-                                                imageRendering: "pixelated",
-                                            }}
-                                        >
-                                            {isClaimingReward ? "Claiming..." : `Continue (${Math.floor(25 * calculateIncomeMultiplier() * (currentBreakNumber % 4 === 0 ? 3 : 1)).toLocaleString()} coins)`}
-                                        </button>
-                                    ) : (
-                                        <button
-                                            onClick={() => setIsBreakRunning(!isBreakRunning)}
+                                            onClick={handleStartPomodoro}
                                             onMouseEnter={() => playSound("/Audio/interact.mp3")}
-                                            className="px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                            className="px-6 py-3 text-xl font-bold text-white transition-all active:scale-95 wiggle-hover"
                                             style={{
                                                 backgroundColor: "#D4A574",
                                                 border: "3px solid #8B4513",
@@ -3043,24 +3076,66 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                 imageRendering: "pixelated",
                                             }}
                                         >
-                                            {isBreakRunning ? "Pause" : "Start"}
+                                            Start Pomodoro Session
                                         </button>
                                     )}
-                                    {/* Exit Break button - always shown */}
-                                    <button
-                                        onClick={handleExitPomodoro}
-                                        onMouseEnter={() => playSound("/Audio/interact.mp3")}
-                                        className="px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 wiggle-hover mt-2"
-                                        style={{
-                                            backgroundColor: "#D4A574",
-                                            border: "3px solid #8B4513",
-                                            boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
-                                            imageRendering: "pixelated",
-                                        }}
-                                    >
-                                        Exit Pomodoro Session
-                                    </button>
-                                </div>
+
+                                    {/* Small break timer in bottom right */}
+                                    {pomodoroMode === "break" && (
+                                        <div className="flex flex-col items-center gap-2">
+                                            <div className="text-3xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>
+                                                Break #{currentBreakNumber} {currentBreakNumber % 4 === 0 ? "(Long)" : "(Short)"}
+                                            </div>
+                                            <div className="text-7xl font-bold text-white" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>
+                                                {formatTime(breakTime)}
+                                            </div>
+                                            {breakTime === 0 ? (
+                                                <button
+                                                    onClick={handleClaimBreakReward}
+                                                    onMouseEnter={() => !isClaimingReward && playSound("/Audio/interact.mp3")}
+                                                    disabled={isClaimingReward}
+                                                    className={`px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 ${isClaimingReward ? "opacity-50 cursor-not-allowed" : "wiggle-hover"}`}
+                                                    style={{
+                                                        backgroundColor: "#4CAF50",
+                                                        border: "3px solid #2E7D32",
+                                                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                        imageRendering: "pixelated",
+                                                    }}
+                                                >
+                                                    {isClaimingReward ? "Claiming..." : `Continue (${Math.floor(25 * calculateIncomeMultiplier() * (currentBreakNumber % 4 === 0 ? 3 : 1)).toLocaleString()} coins)`}
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => setIsBreakRunning(!isBreakRunning)}
+                                                    onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                                    className="px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                                    style={{
+                                                        backgroundColor: "#D4A574",
+                                                        border: "3px solid #8B4513",
+                                                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                        imageRendering: "pixelated",
+                                                    }}
+                                                >
+                                                    {isBreakRunning ? "Pause" : "Start"}
+                                                </button>
+                                            )}
+                                            {/* Exit Break button - always shown */}
+                                            <button
+                                                onClick={handleExitPomodoro}
+                                                onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                                className="px-8 py-4 text-2xl font-bold text-white transition-all active:scale-95 wiggle-hover mt-2"
+                                                style={{
+                                                    backgroundColor: "#D4A574",
+                                                    border: "3px solid #8B4513",
+                                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                    imageRendering: "pixelated",
+                                                }}
+                                            >
+                                                Exit Pomodoro Session
+                                            </button>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>
@@ -3332,7 +3407,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                     if (token) {
                                                         const user = await apiService.getUserByUsernameTag(searchUsername.trim(), searchTag.trim(), token);
                                                         if (user) {
-                                                            console.log("✅ Player found:", user);
+                                                            await loadVisitedGarden(user);
                                                         } else {
                                                             console.log("❌ Player not found");
                                                         }
@@ -3379,7 +3454,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                                     if (token) {
                                                         const user = await apiService.getUserByUsernameTag(searchUsername.trim(), searchTag.trim(), token);
                                                         if (user) {
-                                                            console.log("✅ Player found:", user);
+                                                            await loadVisitedGarden(user);
                                                         } else {
                                                             console.log("❌ Player not found");
                                                         }
@@ -3410,7 +3485,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                             if (token) {
                                                 const user = await apiService.getUserByUsernameTag(searchUsername.trim(), searchTag.trim(), token);
                                                 if (user) {
-                                                    console.log("✅ Player found:", user);
+                                                    await loadVisitedGarden(user);
                                                 } else {
                                                     console.log("❌ Player not found");
                                                 }
