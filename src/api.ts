@@ -129,6 +129,7 @@ class APIService {
     }
 
     async cycleWeather(email: string, token: string) {
+        console.log("🌤️ API: Calling cycleWeather for", email);
         const response = await fetch(`${API_URL}/users/${email}/cycle-weather`, {
             method: "POST",
             headers: this.getAuthHeaders(token),
@@ -136,10 +137,13 @@ class APIService {
 
         if (!response.ok) {
             const error = await response.json();
+            console.error("🌤️ API: cycleWeather failed:", error);
             throw new Error(error.detail || "Failed to cycle weather");
         }
 
-        return response.json();
+        const result = await response.json();
+        console.log("🌤️ API: cycleWeather success:", result);
+        return result;
     }
 
     // Plant endpoints
