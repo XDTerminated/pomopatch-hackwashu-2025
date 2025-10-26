@@ -146,6 +146,19 @@ class APIService {
         return result;
     }
 
+    async getUsers(token: string): Promise<UserData[]> {
+        const response = await fetch(`${API_URL}/users`, {
+            headers: this.getAuthHeaders(token),
+        });
+
+        if (!response.ok) {
+            throw new Error("Failed to fetch users");
+        }
+
+        const data = await response.json();
+        return data.users || [];
+    }
+
     // Plant endpoints
     async getUserPlants(email: string, token: string): Promise<Plant[]> {
         const response = await fetch(`${API_URL}/users/${email}/plants`, {

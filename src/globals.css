@@ -11,6 +11,16 @@ body {
     cursor: none;
 }
 
+/* Hide scrollbars for all browsers */
+* {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+}
+
+*::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+}
+
 /* Allow dragging for draggable elements */
 [draggable="true"] {
     -webkit-user-drag: element;
