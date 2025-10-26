@@ -163,6 +163,11 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
     const [isMuted, setIsMuted] = useState(false);
     const [isHoveringMute, setIsHoveringMute] = useState(false);
     const [isHoveringLeaderboard, setIsHoveringLeaderboard] = useState(false);
+    const [isHoveringSearch, setIsHoveringSearch] = useState(false);
+    const [showSearchModal, setShowSearchModal] = useState(false);
+    const [searchUsername, setSearchUsername] = useState("");
+    const [searchTag, setSearchTag] = useState("");
+    const [isSearching, setIsSearching] = useState(false);
     const [isHoveringSignOut, setIsHoveringSignOut] = useState(false);
 
     // Pomodoro timer state
@@ -2842,6 +2847,39 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                     )}
                                 </button>
                                 <button
+                                    onClick={() => {
+                                        setShowSearchModal(true);
+                                        setSearchUsername("");
+                                        setSearchTag("");
+                                    }}
+                                    onMouseEnter={() => {
+                                        setIsHoveringSearch(true);
+                                        playSound("/Audio/interact.mp3");
+                                    }}
+                                    onMouseLeave={() => setIsHoveringSearch(false)}
+                                    className="transition-all active:scale-95 wiggle-hover flex items-center justify-center relative"
+                                >
+                                    <img src="/Sprites/UI/search.png" alt="Search" className="image-pixelated w-9 h-auto" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))", imageRendering: "pixelated" }} draggable={false} />
+                                    {isHoveringSearch && (
+                                        <div
+                                            className="absolute top-full mt-2 text-sm px-3 py-2 whitespace-nowrap font-bold pointer-events-none"
+                                            style={{
+                                                backgroundColor: "#D4A574",
+                                                border: "3px solid #8B4513",
+                                                color: "#9e4539",
+                                                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                imageRendering: "pixelated",
+                                                transform: "translateX(-50%)",
+                                                left: "50%",
+                                                animation: "none",
+                                                zIndex: 99999,
+                                            }}
+                                        >
+                                            Visit Player
+                                        </div>
+                                    )}
+                                </button>
+                                <button
                                     onClick={() => setShowLeaderboard(!showLeaderboard)}
                                     onMouseEnter={() => {
                                         setIsHoveringLeaderboard(true);
@@ -3217,6 +3255,184 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, i
                                         )}
                                     </div>
                                 )}
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {/* Search Modal */}
+                {showSearchModal && (
+                    <>
+                        {/* Translucent gray overlay that blocks interaction */}
+                        <div
+                            className="fixed inset-0"
+                            style={{
+                                zIndex: 10003,
+                                backgroundColor: "rgba(0, 0, 0, 0.6)",
+                                pointerEvents: "auto",
+                            }}
+                            onClick={() => setShowSearchModal(false)}
+                        />
+
+                        {/* Search box */}
+                        <div
+                            className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center p-8"
+                            style={{
+                                zIndex: 10004,
+                                backgroundColor: "#CD683D",
+                                border: "3px solid #8B4513",
+                                boxShadow: "0 4px 8px rgba(0, 0, 0, 0.5)",
+                                imageRendering: "pixelated",
+                                minWidth: "600px",
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Close button */}
+                            <button
+                                onClick={() => setShowSearchModal(false)}
+                                onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                className="absolute top-2 right-2 text-white text-3xl font-bold hover:opacity-70 transition-opacity"
+                                style={{
+                                    width: "32px",
+                                    height: "32px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                }}
+                            >
+                                ×
+                            </button>
+
+                            {/* Title */}
+                            <div className="text-4xl font-bold text-white text-center mb-6" style={{ filter: "drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5))" }}>
+                                Visit Player
+                            </div>
+
+                            {/* Search inputs styled like leaderboard row */}
+                            <div className="w-full flex flex-col gap-4">
+                                {/* Username input */}
+                                <div
+                                    className="flex items-center px-4 py-3"
+                                    style={{
+                                        backgroundColor: "#f4c07c",
+                                        border: "2px solid #e1a85f",
+                                        borderRadius: "4px",
+                                    }}
+                                >
+                                    <input
+                                        type="text"
+                                        value={searchUsername}
+                                        onChange={(e) => setSearchUsername(e.target.value)}
+                                        onKeyDown={async (e) => {
+                                            if (e.key === "Enter" && searchUsername.trim() && searchTag.trim()) {
+                                                e.preventDefault();
+                                                setIsSearching(true);
+                                                try {
+                                                    const token = await getAuthToken();
+                                                    if (token) {
+                                                        const user = await apiService.getUserByUsernameTag(searchUsername.trim(), searchTag.trim(), token);
+                                                        if (user) {
+                                                            console.log("✅ Player found:", user);
+                                                        } else {
+                                                            console.log("❌ Player not found");
+                                                        }
+                                                    }
+                                                } catch (error) {
+                                                    console.error("❌ Search error:", error);
+                                                } finally {
+                                                    setIsSearching(false);
+                                                }
+                                            }
+                                        }}
+                                        placeholder="Username"
+                                        disabled={isSearching}
+                                        className="flex-1 bg-transparent outline-none text-xl font-bold text-white placeholder:text-white placeholder:opacity-50"
+                                        style={{
+                                            filter: "drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.5))",
+                                        }}
+                                        autoFocus
+                                    />
+                                </div>
+
+                                {/* Tag input */}
+                                <div
+                                    className="flex items-center px-4 py-3 gap-2"
+                                    style={{
+                                        backgroundColor: "#f4c07c",
+                                        border: "2px solid #e1a85f",
+                                        borderRadius: "4px",
+                                    }}
+                                >
+                                    <span className="text-xl font-bold" style={{ color: "#cd683d" }}>
+                                        #
+                                    </span>
+                                    <input
+                                        type="text"
+                                        value={searchTag}
+                                        onChange={(e) => setSearchTag(e.target.value)}
+                                        onKeyDown={async (e) => {
+                                            if (e.key === "Enter" && searchUsername.trim() && searchTag.trim()) {
+                                                e.preventDefault();
+                                                setIsSearching(true);
+                                                try {
+                                                    const token = await getAuthToken();
+                                                    if (token) {
+                                                        const user = await apiService.getUserByUsernameTag(searchUsername.trim(), searchTag.trim(), token);
+                                                        if (user) {
+                                                            console.log("✅ Player found:", user);
+                                                        } else {
+                                                            console.log("❌ Player not found");
+                                                        }
+                                                    }
+                                                } catch (error) {
+                                                    console.error("❌ Search error:", error);
+                                                } finally {
+                                                    setIsSearching(false);
+                                                }
+                                            }
+                                        }}
+                                        placeholder="Tag (e.g., 1234)"
+                                        disabled={isSearching}
+                                        className="flex-1 bg-transparent outline-none text-xl font-bold text-white placeholder:text-white placeholder:opacity-50"
+                                        style={{
+                                            filter: "drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.5))",
+                                        }}
+                                    />
+                                </div>
+
+                                {/* Search button */}
+                                <button
+                                    onClick={async () => {
+                                        if (!searchUsername.trim() || !searchTag.trim()) return;
+                                        setIsSearching(true);
+                                        try {
+                                            const token = await getAuthToken();
+                                            if (token) {
+                                                const user = await apiService.getUserByUsernameTag(searchUsername.trim(), searchTag.trim(), token);
+                                                if (user) {
+                                                    console.log("✅ Player found:", user);
+                                                } else {
+                                                    console.log("❌ Player not found");
+                                                }
+                                            }
+                                        } catch (error) {
+                                            console.error("❌ Search error:", error);
+                                        } finally {
+                                            setIsSearching(false);
+                                        }
+                                    }}
+                                    onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                    disabled={isSearching || !searchUsername.trim() || !searchTag.trim()}
+                                    className={`px-8 py-4 text-2xl font-bold text-white transition-all ${isSearching || !searchUsername.trim() || !searchTag.trim() ? "opacity-50 cursor-not-allowed" : "active:scale-95 wiggle-hover"}`}
+                                    style={{
+                                        backgroundColor: "#4CAF50",
+                                        border: "3px solid #2E7D32",
+                                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                        imageRendering: "pixelated",
+                                    }}
+                                >
+                                    {isSearching ? "Searching..." : "Search Player"}
+                                </button>
                             </div>
                         </div>
                     </>

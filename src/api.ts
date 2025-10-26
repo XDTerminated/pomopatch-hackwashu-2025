@@ -159,6 +159,22 @@ class APIService {
         return data.users || [];
     }
 
+    async getUserByUsernameTag(username: string, tag: string, token: string): Promise<UserData | null> {
+        const response = await fetch(`${API_URL}/users/by-username/${username}/${tag}`, {
+            headers: this.getAuthHeaders(token),
+        });
+
+        if (response.status === 404) {
+            return null; // User not found
+        }
+
+        if (!response.ok) {
+            throw new Error("Failed to fetch user");
+        }
+
+        return response.json();
+    }
+
     // Plant endpoints
     async getUserPlants(email: string, token: string): Promise<Plant[]> {
         const response = await fetch(`${API_URL}/users/${email}/plants`, {
