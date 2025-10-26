@@ -44,6 +44,12 @@ body {
     }
 }
 
+.wiggle {
+    transform-origin: center center;
+    will-change: transform;
+    animation: wiggle 0.5s ease-in-out infinite;
+}
+
 .wiggle-hover {
     transform-origin: center center;
     will-change: transform;

@@ -6,6 +6,7 @@ export interface UserData {
     username: string;
     money: number;
     plant_limit: number;
+    weather: number;
 }
 
 export interface Plant {
@@ -63,7 +64,7 @@ class APIService {
                 const error = await response.json();
                 if (error.detail?.includes("already exists")) {
                     // Return a minimal response, caller should fetch full user data
-                    return { email, username: "", money: 0, plant_limit: 0 };
+                    return { email, username: "", money: 0, plant_limit: 0, weather: 0 };
                 }
             }
             const error = await response.json();
@@ -122,6 +123,20 @@ class APIService {
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || "Failed to increase plant limit");
+        }
+
+        return response.json();
+    }
+
+    async cycleWeather(email: string, token: string) {
+        const response = await fetch(`${API_URL}/users/${email}/cycle-weather`, {
+            method: "POST",
+            headers: this.getAuthHeaders(token),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "Failed to cycle weather");
         }
 
         return response.json();

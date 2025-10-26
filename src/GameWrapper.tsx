@@ -89,5 +89,5 @@ export default function GameWrapper() {
         );
     }
 
-    return <App initialMoney={userData?.money} initialPlantLimit={userData?.plant_limit} initialPlants={plants} userEmail={user?.primaryEmailAddress?.emailAddress || ""} getAuthToken={getToken} />;
+    return <App initialMoney={userData?.money} initialPlantLimit={userData?.plant_limit} initialWeather={userData?.weather} initialPlants={plants} userEmail={user?.primaryEmailAddress?.emailAddress || ""} getAuthToken={getToken} />;
 }

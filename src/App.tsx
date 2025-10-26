@@ -36,6 +36,7 @@ interface PlacedSprout {
 interface AppProps {
     initialMoney?: number;
     initialPlantLimit?: number;
+    initialWeather?: number;
     initialPlants?: Plant[];
     userEmail: string;
     getAuthToken: () => Promise<string | null>;
@@ -101,7 +102,7 @@ const Rain = memo(({ rainDrops }: { rainDrops: RainDrop[] }) => {
     );
 });
 
-function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], userEmail, getAuthToken }: AppProps) {
+function App({ initialMoney = 100, initialPlantLimit = 50, initialWeather = 0, initialPlants = [], userEmail, getAuthToken }: AppProps) {
     const [greetMsg, setGreetMsg] = useState("");
     const [name, setName] = useState("");
     const [draggedSeed, setDraggedSeed] = useState<SeedPacket | null>(null);
@@ -140,7 +141,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
     const [rainDrops, setRainDrops] = useState<RainDrop[]>([]);
     const [weather, setWeather] = useState<WeatherType>(() => {
         const weatherTypes: WeatherType[] = ["sunny", "rainy", "cloudy"];
-        return weatherTypes[Math.floor(Math.random() * weatherTypes.length)];
+        return weatherTypes[initialWeather] || "sunny";
     });
     const [toolParticles, setToolParticles] = useState<ToolParticle[]>([]);
     const [hoveredPacketId, setHoveredPacketId] = useState<string | null>(null);
@@ -151,6 +152,14 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
     const [inventoryLimit, setInventoryLimit] = useState(initialPlantLimit);
     const [isHoveringPlantCount, setIsHoveringPlantCount] = useState(false);
     const [lightning, setLightning] = useState<Lightning | null>(null);
+
+    // Pomodoro timer state
+    const [pomodoroMode, setPomodoroMode] = useState<"none" | "work" | "break">("none");
+    const [pomodoroTime, setPomodoroTime] = useState(25 * 60); // 25 minutes in seconds
+    const [breakTime, setBreakTime] = useState(5 * 60); // 5 minutes in seconds
+    const [isPomodoroRunning, setIsPomodoroRunning] = useState(false);
+    const [isBreakRunning, setIsBreakRunning] = useState(false);
+    const [pomodoroCompleted, setPomodoroCompleted] = useState(false);
 
     // Function to play sounds
     const playSound = (soundPath: string) => {
@@ -417,25 +426,6 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
         }
     }, [weather]);
 
-    // Change weather randomly at random intervals
-    useEffect(() => {
-        const scheduleNextWeatherChange = () => {
-            const weatherTypes: WeatherType[] = ["sunny", "rainy", "cloudy"];
-            const randomWeather = weatherTypes[Math.floor(Math.random() * weatherTypes.length)];
-            const randomInterval = Math.random() * 40000 + 20000;
-
-            const timeout = setTimeout(() => {
-                setWeather(randomWeather);
-                scheduleNextWeatherChange();
-            }, randomInterval);
-
-            return timeout;
-        };
-
-        const timeout = scheduleNextWeatherChange();
-        return () => clearTimeout(timeout);
-    }, []);
-
     // Trigger lightning randomly when it's raining
     useEffect(() => {
         if (weather === "rainy") {
@@ -490,7 +480,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
         return () => clearInterval(interval);
     }, [money, displayedMoney]);
 
-    // Periodic backend sync - fetch all plant data from backend every 5 seconds
+    // Periodic backend sync - fetch all plant data from backend on mount
     useEffect(() => {
         const syncWithBackend = async () => {
             try {
@@ -498,6 +488,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                 if (!token) return;
 
                 const plants = await apiService.getUserPlants(userEmail, token);
+                console.log("🔄 Syncing plants from backend:", plants);
 
                 // Update plants with backend data
                 const centerX = window.innerWidth / 2;
@@ -526,14 +517,42 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
             }
         };
 
-        // Initial sync
+        // Initial sync only - no periodic updates
         syncWithBackend();
-
-        // Sync every 5 seconds
-        const interval = setInterval(syncWithBackend, 5000);
-
-        return () => clearInterval(interval);
     }, [userEmail, getAuthToken]);
+
+    // Pomodoro timer countdown
+    useEffect(() => {
+        if (pomodoroMode === "work" && isPomodoroRunning && pomodoroTime > 0) {
+            const interval = setInterval(() => {
+                setPomodoroTime((prev) => {
+                    if (prev <= 1) {
+                        setIsPomodoroRunning(false);
+                        setPomodoroCompleted(true);
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000 / 60); // 60x faster for testing
+            return () => clearInterval(interval);
+        }
+    }, [pomodoroMode, isPomodoroRunning, pomodoroTime]);
+
+    // Break timer countdown
+    useEffect(() => {
+        if (pomodoroMode === "break" && isBreakRunning && breakTime > 0) {
+            const interval = setInterval(() => {
+                setBreakTime((prev) => {
+                    if (prev <= 1) {
+                        setIsBreakRunning(false);
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000 / 60); // 60x faster for testing
+            return () => clearInterval(interval);
+        }
+    }, [pomodoroMode, isBreakRunning, breakTime]);
 
     const seedPackets: SeedPacket[] = [
         {
@@ -803,16 +822,19 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         })
                         .then((response) => {
                             const realSproutId = `plant-${response.plant_id}`;
-                            // Update with complete backend data
+                            console.log("✅ Plant created successfully:", response);
+                            // Update with complete backend data - capture ALL fields
                             setPlacedSprouts((prev) =>
                                 prev.map((s) =>
                                     s.id === tempSproutId
                                         ? {
-                                              ...s,
+                                              ...s, // Keep x, y, seedType
                                               id: realSproutId,
-                                              species: response.plant_species,
-                                              rarity: response.rarity,
-                                              growth_time_remaining: null, // Backend returns this as null for new plants
+                                              stage: response.stage ?? s.stage,
+                                              species: response.plant_species ?? s.species,
+                                              rarity: response.rarity ?? s.rarity,
+                                              growth_time_remaining: response.growth_time_remaining ?? s.growth_time_remaining,
+                                              fertilizer_remaining: response.fertilizer_remaining ?? s.fertilizer_remaining,
                                           }
                                         : s
                                 )
@@ -843,6 +865,7 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                         const targetSprout = placedSprouts.find((s) => s.id === hoveredSproutId);
                         const currentStage = targetSprout?.stage ?? 0;
                         const growthTimeRemaining = targetSprout?.growth_time_remaining;
+                        const fertilizerRemaining = targetSprout?.fertilizer_remaining;
 
                         if (isNaN(plantId) || hoveredSproutId.startsWith("temp-")) {
                             playSound("/Audio/error.mp3");
@@ -857,6 +880,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                             return;
                         }
 
+                        // Plant must NOT be growing (growth_time_remaining must be null)
+                        // AND must need fertilizer (fertilizer_remaining must be null or > 0)
                         if (growthTimeRemaining !== null) {
                             console.log("🌿 Cannot fertilize - plant is still growing (time remaining:", growthTimeRemaining, ")");
                             playSound("/Audio/error.mp3");
@@ -864,10 +889,18 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                             return;
                         }
 
-                        const fertilizerCost = draggedTool.price || 30;
+                        // If fertilizer_remaining is 0, plant doesn't need fertilizer
+                        if (fertilizerRemaining !== null && fertilizerRemaining !== undefined && fertilizerRemaining <= 0) {
+                            console.log("🌿 Cannot fertilize - plant doesn't need fertilizer (fertilizer_remaining:", fertilizerRemaining, ")");
+                            playSound("/Audio/error.mp3");
+                            setHoveredSproutId(null);
+                            return;
+                        }
+
+                        const fertilizerCost = draggedTool.price || 25;
                         const currentMoney = money;
 
-                        console.log("🌿 Fertilizing plant:", { plantId, currentMoney: money, fertilizerCost, newMoney: money - fertilizerCost });
+                        console.log("🌿 Fertilizing plant:", { plantId, currentMoney: money, fertilizerCost, newMoney: money - fertilizerCost, fertilizerRemaining, growthTimeRemaining });
 
                         // Optimistic update - update client side first for instant feedback
                         setMoney(money - fertilizerCost);
@@ -898,6 +931,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                             }
                             setToolParticles((prev) => [...prev, ...newParticles]);
                         }
+                        
+                        const hoveredId = hoveredSproutId; // Capture the ID before clearing
                         setHoveredSproutId(null);
 
                         // Get fresh token before API call
@@ -907,19 +942,22 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                     .applyFertilizer(userEmail, plantId, token)
                                     .then((response) => {
                                         console.log("🌿 Fertilizer applied successfully:", response);
-                                        // Update local plant state with backend response
+                                        // Update local plant state with backend response - preserve ALL properties
                                         setPlacedSprouts((prev) =>
                                             prev.map((s) =>
-                                                s.id === hoveredSproutId
+                                                s.id === hoveredId
                                                     ? {
-                                                          ...s,
-                                                          growth_time_remaining: response.growth_time_remaining,
-                                                          fertilizer_remaining: response.fertilizer_remaining,
+                                                          ...s, // Keep all existing properties (x, y, seedType, species, rarity, etc.)
+                                                          stage: response.stage ?? s.stage,
+                                                          growth_time_remaining: response.growth_time_remaining ?? s.growth_time_remaining,
+                                                          fertilizer_remaining: response.fertilizer_remaining ?? s.fertilizer_remaining,
+                                                          species: response.plant_species ?? s.species,
+                                                          rarity: response.rarity ?? s.rarity,
                                                       }
                                                     : s
                                             )
                                         );
-                                        setMoney(response.new_money);
+                                        setMoney(response.new_money ?? money);
                                     })
                                     .catch((error) => {
                                         console.error("❌ Failed to apply fertilizer:", error);
@@ -961,18 +999,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
 
                         console.log("💧 Watering plant:", { plantId, currentMoney: money, waterCost, newMoney: money - waterCost });
 
-                        // Optimistic update - update client side first for instant feedback
+                        // Optimistic update - only update money, will update plant from backend response
                         setMoney(money - waterCost);
-                        setPlacedSprouts((prev) =>
-                            prev.map((s) =>
-                                s.id === hoveredSproutId
-                                    ? {
-                                          ...s,
-                                          growth_time_remaining: 30, // STAGE_0_GROWTH_TIME from backend
-                                      }
-                                    : s
-                            )
-                        );
                         playSound("/Audio/wateringcanuse.mp3");
 
                         const sprout = placedSprouts.find((s) => s.id === hoveredSproutId);
@@ -1000,6 +1028,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                             }
                             setToolParticles((prev) => [...prev, ...newParticles]);
                         }
+                        
+                        const hoveredId = hoveredSproutId; // Capture the ID before clearing
                         setHoveredSproutId(null);
 
                         // Get fresh token before API call
@@ -1009,18 +1039,22 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                     .applyWater(userEmail, plantId, token)
                                     .then((response) => {
                                         console.log("💧 Water applied successfully:", response);
-                                        // Update with actual backend values to ensure sync
+                                        // Update with actual backend values to ensure sync - preserve ALL properties
                                         setPlacedSprouts((prev) =>
                                             prev.map((s) =>
-                                                s.id === hoveredSproutId
+                                                s.id === hoveredId
                                                     ? {
-                                                          ...s,
-                                                          growth_time_remaining: response.growth_time_remaining,
+                                                          ...s, // Keep all existing properties (x, y, seedType, species, rarity, etc.)
+                                                          stage: response.stage ?? s.stage,
+                                                          growth_time_remaining: response.growth_time_remaining ?? s.growth_time_remaining,
+                                                          fertilizer_remaining: response.fertilizer_remaining ?? s.fertilizer_remaining,
+                                                          species: response.plant_species ?? s.species,
+                                                          rarity: response.rarity ?? s.rarity,
                                                       }
                                                     : s
                                             )
                                         );
-                                        setMoney(response.new_money);
+                                        setMoney(response.new_money ?? money);
                                     })
                                     .catch((error) => {
                                         console.error("❌ Failed to apply water:", error);
@@ -1223,6 +1257,303 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
         }
     };
 
+    // Calculate income multiplier based on plants
+    const calculateIncomeMultiplier = (): number => {
+        let multiplier = 1.0;
+        placedSprouts.forEach((sprout) => {
+            const stage = sprout.stage ?? 0;
+            const rarity = sprout.rarity ?? 0;
+            
+            if (stage === 1) {
+                // Rare: +0.5%, Epic: +1%, Legendary: +2.5%
+                if (rarity === 0) multiplier += 0.005;
+                else if (rarity === 1) multiplier += 0.01;
+                else if (rarity === 2) multiplier += 0.025;
+            } else if (stage === 2) {
+                // Double the multiplier for stage 2
+                if (rarity === 0) multiplier += 0.01;
+                else if (rarity === 1) multiplier += 0.02;
+                else if (rarity === 2) multiplier += 0.05;
+            }
+        });
+        return multiplier;
+    };
+
+    // Get individual plant's income multiplier contribution
+    const getPlantIncomeBonus = (sprout: PlacedSprout): string => {
+        const stage = sprout.stage ?? 0;
+        const rarity = sprout.rarity ?? 0;
+        
+        if (stage === 0) return "";
+        
+        let bonus = 0;
+        if (stage === 1) {
+            if (rarity === 0) bonus = 0.5;
+            else if (rarity === 1) bonus = 1.0;
+            else if (rarity === 2) bonus = 2.5;
+        } else if (stage === 2) {
+            if (rarity === 0) bonus = 1.0;
+            else if (rarity === 1) bonus = 2.0;
+            else if (rarity === 2) bonus = 5.0;
+        }
+        
+        return bonus > 0 ? `+${bonus.toFixed(1)}%` : "";
+    };
+
+    // Format time display (MM:SS)
+    const formatTime = (seconds: number): string => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Start pomodoro session
+    const handleStartPomodoro = () => {
+        setPomodoroMode("work");
+        setPomodoroTime(25 * 60);
+        setIsPomodoroRunning(false); // Start in paused state
+        setPomodoroCompleted(false);
+    };
+
+    // Exit pomodoro session (no rewards)
+    const handleExitPomodoro = () => {
+        setPomodoroMode("none");
+        setPomodoroTime(25 * 60);
+        setBreakTime(5 * 60);
+        setIsPomodoroRunning(false);
+        setIsBreakRunning(false);
+        setPomodoroCompleted(false);
+    };
+
+    // Claim pomodoro rewards
+    const handleClaimPomodoroReward = async () => {
+        const multiplier = calculateIncomeMultiplier();
+        const baseCoins = 125;
+        
+        // Apply weather effect to income (sunny = 1.5x multiplicative)
+        const weatherMultiplier = weather === "sunny" ? 1.5 : 1.0;
+        const coinsEarned = Math.floor(baseCoins * multiplier * weatherMultiplier);
+        
+        // Apply weather effect to time (rainy = 1.5x multiplicative)
+        const timeMultiplier = weather === "rainy" ? 1.5 : 1.0;
+        const timeToGrow = Math.floor(25 * timeMultiplier);
+
+        // Play coin animation
+        const newCoins: CoinParticle[] = [];
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        for (let i = 0; i < 10; i++) {
+            newCoins.push({
+                id: `coin-${Date.now()}-${i}`,
+                x: centerX,
+                y: centerY,
+                startX: centerX,
+                startY: centerY,
+            });
+        }
+        setCoinParticles([...coinParticles, ...newCoins]);
+        setTimeout(() => {
+            setCoinParticles((prev) => prev.filter((c) => !newCoins.find((nc) => nc.id === c.id)));
+        }, 1000);
+
+        // Add coins to user
+        setMoney(money + coinsEarned);
+        playSound("/Audio/sell.mp3");
+
+        // Update plants CLIENT-SIDE FIRST - simulate growth
+        setPlacedSprouts((prev) =>
+            prev.map((sprout) => {
+                if (sprout.id.startsWith("temp-")) return sprout;
+                
+                const currentGrowth = sprout.growth_time_remaining;
+                if (currentGrowth === null || currentGrowth === undefined) return sprout;
+                
+                const newGrowthTime = Math.max(0, currentGrowth - timeToGrow);
+                
+                // If growth completes, advance stage
+                if (newGrowthTime === 0) {
+                    const currentStage = sprout.stage ?? 0;
+                    if (currentStage >= 2) return sprout; // Already max stage
+                    
+                    const newStage = currentStage + 1;
+                    
+                    // If advancing to stage 1, set fertilizer_remaining based on rarity
+                    if (newStage === 1) {
+                        const rarity = sprout.rarity ?? 0;
+                        const fertilizerNeeded = rarity + 1; // Rare=1, Epic=2, Legendary=3
+                        return {
+                            ...sprout,
+                            stage: newStage,
+                            growth_time_remaining: null,
+                            fertilizer_remaining: fertilizerNeeded,
+                        };
+                    } else {
+                        // Advancing to stage 2
+                        return {
+                            ...sprout,
+                            stage: newStage,
+                            growth_time_remaining: null,
+                        };
+                    }
+                } else {
+                    // Still growing
+                    return {
+                        ...sprout,
+                        growth_time_remaining: newGrowthTime,
+                    };
+                }
+            })
+        );
+
+        // Now sync with backend
+        try {
+            const token = await getAuthToken();
+            if (!token) throw new Error("Failed to get auth token");
+
+            // Grow all plants on backend
+            const growPromises = placedSprouts
+                .filter((sprout) => !sprout.id.startsWith("temp-"))
+                .map(async (sprout) => {
+                    const plantId = parseInt(sprout.id.replace("plant-", ""));
+                    if (!isNaN(plantId)) {
+                        return apiService.growPlant(userEmail, plantId, { time: timeToGrow }, token);
+                    }
+                    return null;
+                });
+
+            await Promise.all(growPromises);
+
+            // Update money on backend
+            await apiService.changeMoney(userEmail, coinsEarned, token);
+
+            // Cycle weather
+            const weatherResponse = await apiService.cycleWeather(userEmail, token);
+            const weatherTypes: WeatherType[] = ["sunny", "rainy", "cloudy"];
+            setWeather(weatherTypes[weatherResponse.new_weather] || "sunny");
+
+        } catch (error) {
+            console.error("Failed to process pomodoro rewards:", error);
+        }
+
+        // Start break mode
+        setPomodoroMode("break");
+        setBreakTime(5 * 60);
+        setIsBreakRunning(false); // Start in paused state
+        setPomodoroCompleted(false);
+    };
+
+    // Claim break reward and restart pomodoro
+    const handleClaimBreakReward = async () => {
+        const multiplier = calculateIncomeMultiplier();
+        const baseCoins = 25;
+        
+        // Apply weather effect to income (sunny = 1.5x multiplicative)
+        const weatherMultiplier = weather === "sunny" ? 1.5 : 1.0;
+        const coinsEarned = Math.floor(baseCoins * multiplier * weatherMultiplier);
+        
+        // Apply weather effect to time (rainy = 1.5x multiplicative)
+        const timeMultiplier = weather === "rainy" ? 1.5 : 1.0;
+        const timeToGrow = Math.floor(5 * timeMultiplier);
+
+        // Play coin animation
+        const newCoins: CoinParticle[] = [];
+        const breakX = window.innerWidth - 150;
+        const breakY = window.innerHeight - 150;
+        for (let i = 0; i < 5; i++) {
+            newCoins.push({
+                id: `coin-${Date.now()}-${i}`,
+                x: breakX,
+                y: breakY,
+                startX: breakX,
+                startY: breakY,
+            });
+        }
+        setCoinParticles([...coinParticles, ...newCoins]);
+        setTimeout(() => {
+            setCoinParticles((prev) => prev.filter((c) => !newCoins.find((nc) => nc.id === c.id)));
+        }, 1000);
+
+        // Add coins to user
+        setMoney(money + coinsEarned);
+        playSound("/Audio/sell.mp3");
+
+        // Update plants CLIENT-SIDE FIRST - simulate growth
+        setPlacedSprouts((prev) =>
+            prev.map((sprout) => {
+                if (sprout.id.startsWith("temp-")) return sprout;
+                
+                const currentGrowth = sprout.growth_time_remaining;
+                if (currentGrowth === null || currentGrowth === undefined) return sprout;
+                
+                const newGrowthTime = Math.max(0, currentGrowth - timeToGrow);
+                
+                // If growth completes, advance stage
+                if (newGrowthTime === 0) {
+                    const currentStage = sprout.stage ?? 0;
+                    if (currentStage >= 2) return sprout; // Already max stage
+                    
+                    const newStage = currentStage + 1;
+                    
+                    // If advancing to stage 1, set fertilizer_remaining based on rarity
+                    if (newStage === 1) {
+                        const rarity = sprout.rarity ?? 0;
+                        const fertilizerNeeded = rarity + 1; // Rare=1, Epic=2, Legendary=3
+                        return {
+                            ...sprout,
+                            stage: newStage,
+                            growth_time_remaining: null,
+                            fertilizer_remaining: fertilizerNeeded,
+                        };
+                    } else {
+                        // Advancing to stage 2
+                        return {
+                            ...sprout,
+                            stage: newStage,
+                            growth_time_remaining: null,
+                        };
+                    }
+                } else {
+                    // Still growing
+                    return {
+                        ...sprout,
+                        growth_time_remaining: newGrowthTime,
+                    };
+                }
+            })
+        );
+
+        // Now sync with backend
+        try {
+            const token = await getAuthToken();
+            if (!token) throw new Error("Failed to get auth token");
+
+            // Grow all plants on backend
+            const growPromises = placedSprouts
+                .filter((sprout) => !sprout.id.startsWith("temp-"))
+                .map(async (sprout) => {
+                    const plantId = parseInt(sprout.id.replace("plant-", ""));
+                    if (!isNaN(plantId)) {
+                        return apiService.growPlant(userEmail, plantId, { time: timeToGrow }, token);
+                    }
+                    return null;
+                });
+
+            await Promise.all(growPromises);
+
+            // Update money on backend
+            await apiService.changeMoney(userEmail, coinsEarned, token);
+
+        } catch (error) {
+            console.error("Failed to process break rewards:", error);
+        }
+
+        // Restart pomodoro
+        setPomodoroMode("work");
+        setPomodoroTime(25 * 60);
+        setIsPomodoroRunning(false); // Start in paused state
+        setPomodoroCompleted(false);
+    };
+
     return (
         <>
             <img
@@ -1287,6 +1618,18 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                     const growthTime = sprout.growth_time_remaining;
                     const fertilizerNeeded = sprout.fertilizer_remaining;
 
+                    // Debug logging for plants with missing info
+                    if (stage === 1 && growthTime === null && (fertilizerNeeded === null || fertilizerNeeded === undefined)) {
+                        console.log("🐛 Plant missing fertilizer info:", {
+                            id: sprout.id,
+                            stage,
+                            growthTime,
+                            fertilizerNeeded,
+                            species: sprout.species,
+                            fullSprout: sprout
+                        });
+                    }
+
                     return (
                         <div
                             key={sprout.id}
@@ -1304,65 +1647,89 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                 draggable={false}
                                 style={{
                                     opacity: isAttached ? 0.7 : 1,
-                                    filter: hasCollision || inUIArea ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)" : isHovered && !isAttached ? "brightness(1.3)" : "none",
+                                    filter: hasCollision || inUIArea ? "sepia(100%) saturate(500%) hue-rotate(-50deg) brightness(0.8)" : isHovered && !isAttached && pomodoroMode === "none" ? "brightness(1.3)" : "none",
                                     transition: isAttached ? "none" : "all 0.3s",
                                     animation: isAttached ? "shake 0.15s ease-in-out infinite" : isNewlyPlaced ? "settle 0.4s ease-out" : "none",
                                 }}
                             />
-                            {isHovered && !isAttached && (
+                            
+                            {/* Always visible icons for water/fertilizer needs */}
+                            {!isAttached && stage === 0 && growthTime === null && (
+                                <div className="absolute flex items-center gap-1 wiggle" style={{ zIndex: 2, top: '8px', right: '8px' }}>
+                                    <img src="/Sprites/UI/wateringcan.png" className="image-pixelated w-6 h-6" alt="needs water" draggable={false} />
+                                </div>
+                            )}
+                            {!isAttached && stage === 1 && growthTime === null && fertilizerNeeded !== null && fertilizerNeeded !== undefined && fertilizerNeeded > 0 && (
+                                <div className="absolute flex items-center gap-1 wiggle" style={{ zIndex: 2, top: '8px', right: '8px' }}>
+                                    <img src="/Sprites/UI/fertilizer.png" className="image-pixelated w-6 h-6" alt="needs fertilizer" draggable={false} />
+                                    <span className="text-white text-xs font-bold">x{fertilizerNeeded}</span>
+                                </div>
+                            )}
+                            
+                            {/* Always visible time remaining for growing plants */}
+                            {!isAttached && growthTime !== null && growthTime !== undefined && growthTime > 0 && (
+                                <div 
+                                    className="absolute left-1/2 transform -translate-x-1/2"
+                                    style={{ zIndex: 2, top: 'calc(100% - 30px)' }}
+                                >
+                                    <span className="text-white text-xs font-bold whitespace-nowrap">{growthTime} mins</span>
+                                </div>
+                            )}
+                            
+                            {isHovered && !isAttached && pomodoroMode === "none" && (
                                 <div
-                                    className="absolute bg-black/80 text-white text-xs px-2 py-1 rounded whitespace-nowrap"
+                                    className="fixed bg-black/80 text-white text-xs px-2 py-1 rounded whitespace-nowrap"
                                     style={{
-                                        left: "50%",
-                                        top: "-60px",
+                                        left: sprout.x,
+                                        bottom: `calc(100vh - ${sprout.y - 48}px - 30px)`,
                                         transform: "translateX(-50%)",
-                                        zIndex: 10000,
+                                        zIndex: 20000,
                                         pointerEvents: "none",
                                     }}
                                 >
                                     <div className="flex flex-col gap-1">
-                                        {/* Plant Type & Species */}
-                                        <div className="text-white font-bold">
-                                            {sprout.seedType} - {sprout.species || "Unknown"}
+                                        {/* Species (rarity color) and Family */}
+                                        <div className={`font-bold ${sprout.rarity === 0 ? "text-blue-400" : sprout.rarity === 1 ? "text-purple-400" : "text-yellow-400"}`}>
+                                            {(sprout.species || "Unknown").split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')} ({(sprout.seedType || "").charAt(0).toUpperCase() + (sprout.seedType || "").slice(1)})
                                         </div>
 
-                                        {/* Rarity */}
+                                        {/* Rarity with star */}
                                         {sprout.rarity !== undefined && (
-                                            <div className={sprout.rarity === 0 ? "text-gray-300" : sprout.rarity === 1 ? "text-purple-400" : "text-yellow-400"}>
-                                                ★ {sprout.rarity === 0 ? "Common" : sprout.rarity === 1 ? "Epic" : "Legendary"}
+                                            <div className={sprout.rarity === 0 ? "text-blue-400" : sprout.rarity === 1 ? "text-purple-400" : "text-yellow-400"}>
+                                                ★ {sprout.rarity === 0 ? "Rare" : sprout.rarity === 1 ? "Epic" : "Legendary"}
+                                            </div>
+                                        )}
+
+                                        {/* Income Multiplier */}
+                                        {getPlantIncomeBonus(sprout) && (
+                                            <div className="text-green-400">
+                                                💰 Income: {getPlantIncomeBonus(sprout)}
                                             </div>
                                         )}
 
                                         {/* Stage */}
                                         <div className="text-purple-400">
-                                            🌿 Stage {stage ?? 0}
+                                            🌿 Stage: {stage === 0 ? "Seedling" : stage === 1 ? "Juvenile" : "Mature"}
                                         </div>
 
-                                        {/* Growth Timer - show in minutes */}
+                                        {/* Time to next stage */}
                                         {growthTime !== null && growthTime !== undefined && growthTime > 0 && (
                                             <div className="text-blue-400">
-                                                🕐 {Math.ceil(growthTime / 60)} min
+                                                🕐 {growthTime} mins to next stage
                                             </div>
                                         )}
 
-                                        {/* Fertilizer - show if backend says it needs fertilizer */}
+                                        {/* Fertilizer needed */}
                                         {fertilizerNeeded !== null && fertilizerNeeded !== undefined && fertilizerNeeded > 0 && (
                                             <div className="text-yellow-400">
-                                                🌱 Needs {fertilizerNeeded} Fertilizer{fertilizerNeeded !== 1 ? "s" : ""}
+                                                🌱 Fertilizer needed ({fertilizerNeeded}x)
                                             </div>
                                         )}
 
-                                        {/* Water status - only for stage 0 */}
-                                        {stage === 0 && (
-                                            <div className={growthTime === null ? "text-green-400" : "text-gray-400"}>
-                                                💧 {growthTime === null ? "Needs Water" : "Watered"}
-                                            </div>
-                                        )}
-
-                                        {/* Fully grown indicator */}
-                                        {stage === 2 && (
-                                            <div className="text-green-400">
-                                                ✨ Ready to Sell!
+                                        {/* Water needed - only for stage 0 without growth time */}
+                                        {stage === 0 && growthTime === null && (
+                                            <div className="text-blue-400">
+                                                💧 Water needed
                                             </div>
                                         )}
                                     </div>
@@ -1499,10 +1866,8 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                 key={seed.id}
                                                 onMouseDown={canAfford ? handleSeedMouseDown(seed) : () => playSound("/Audio/error.mp3")}
                                                 onMouseEnter={() => {
-                                                    if (canAfford) {
-                                                        playSound("/Audio/interact.mp3");
-                                                        setHoveredPacketId(seed.id);
-                                                    }
+                                                    playSound("/Audio/interact.mp3");
+                                                    setHoveredPacketId(seed.id);
                                                 }}
                                                 onMouseLeave={() => setHoveredPacketId(null)}
                                                 className={`size-16 flex justify-center items-center flex-col gap-0.5 transition-all ${draggedSeed?.id === seed.id ? "opacity-50 cursor-grab active:cursor-grabbing active:scale-95" : canAfford ? "opacity-100 cursor-grab active:cursor-grabbing active:scale-95" : "opacity-30 cursor-not-allowed"} ${!draggedSeed && canAfford ? "wiggle-hover" : ""}`}
@@ -1514,15 +1879,15 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                 <img src={seed.image} className="w-fit h-full image-pixelated object-contain pointer-events-none" alt={`${seed.type} packet`} draggable={false} />
                                                 {seed.id === "berry" && isHovered && (
                                                     <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-50%" }}>
+                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-50%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
                                                             <img src="/Sprites/berry/blueberry_2.png" className="w-12 h-12 image-pixelated object-cover" alt="berry blue" draggable={false} style={{ width: "48px", height: "48px" }} />
                                                             <div className="text-xs text-white font-bold whitespace-nowrap">79%</div>
                                                         </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "50%", transform: "translateX(-50%)" }}>
+                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "50%", transform: "translateX(-50%)", filter: !canAfford ? "grayscale(100%)" : "none" }}>
                                                             <img src="/Sprites/berry/strawberry_2.png" className="w-12 h-12 image-pixelated object-cover" alt="berry straw" draggable={false} style={{ width: "48px", height: "48px" }} />
                                                             <div className="text-xs text-white font-bold whitespace-nowrap">20%</div>
                                                         </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", right: "-50%" }}>
+                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", right: "-50%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
                                                             <img src="/Sprites/berry/ancient_fruit_2.png" className="w-12 h-12 image-pixelated object-cover" alt="berry ancient" draggable={false} style={{ width: "48px", height: "48px" }} />
                                                             <div className="text-xs text-white font-bold whitespace-nowrap">1%</div>
                                                         </div>
@@ -1530,15 +1895,15 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                 )}
                                                 {seed.id === "fungi" && isHovered && (
                                                     <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-50%" }}>
+                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-50%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
                                                             <img src="/Sprites/fungi/brown_mushroom_2.png" className="w-12 h-12 image-pixelated object-cover" alt="brown mushroom" draggable={false} style={{ width: "48px", height: "48px" }} />
                                                             <div className="text-xs text-white font-bold whitespace-nowrap">79%</div>
                                                         </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "50%", transform: "translateX(-50%)" }}>
+                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "50%", transform: "translateX(-50%)", filter: !canAfford ? "grayscale(100%)" : "none" }}>
                                                             <img src="/Sprites/fungi/red_mushroom_2.png" className="w-12 h-12 image-pixelated object-cover" alt="red mushroom" draggable={false} style={{ width: "48px", height: "48px" }} />
                                                             <div className="text-xs text-white font-bold whitespace-nowrap">20%</div>
                                                         </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", right: "-50%" }}>
+                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", right: "-50%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
                                                             <img src="/Sprites/fungi/mario_mushroom_2.png" className="w-12 h-12 image-pixelated object-cover" alt="mario mushroom" draggable={false} style={{ width: "48px", height: "48px" }} />
                                                             <div className="text-xs text-white font-bold whitespace-nowrap">1%</div>
                                                         </div>
@@ -1546,19 +1911,19 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                                 )}
                                                 {seed.id === "rose" && isHovered && (
                                                     <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-90%" }}>
+                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-90%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
                                                             <img src="/Sprites/roses/red_rose_2.png" className="w-12 h-12 image-pixelated object-cover" alt="red rose" draggable={false} style={{ width: "48px", height: "48px" }} />
                                                             <div className="text-xs text-white font-bold whitespace-nowrap">79%</div>
                                                         </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-30%" }}>
+                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "-30%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
                                                             <img src="/Sprites/roses/pink_rose_2.png" className="w-12 h-12 image-pixelated object-cover" alt="pink rose" draggable={false} style={{ width: "48px", height: "48px" }} />
                                                             <div className="text-xs text-white font-bold whitespace-nowrap">20%</div>
                                                         </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "30%" }}>
+                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "30%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
                                                             <img src="/Sprites/roses/white_rose_2.png" className="w-12 h-12 image-pixelated object-cover" alt="white rose" draggable={false} style={{ width: "48px", height: "48px" }} />
                                                             <div className="text-xs text-white font-bold whitespace-nowrap">20%</div>
                                                         </div>
-                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "110%" }}>
+                                                        <div className="absolute flex flex-col items-center gap-1" style={{ top: "100%", left: "110%", filter: !canAfford ? "grayscale(100%)" : "none" }}>
                                                             <img src="/Sprites/roses/withered_rose_2.png" className="w-12 h-12 image-pixelated object-cover" alt="wither rose" draggable={false} style={{ width: "48px", height: "48px" }} />
                                                             <div className="text-xs text-white font-bold whitespace-nowrap">1%</div>
                                                         </div>
@@ -1753,9 +2118,155 @@ function App({ initialMoney = 100, initialPlantLimit = 50, initialPlants = [], u
                                 )}
                             </div>
                         </div>
-                        <div className="text-5xl text-white font-bold">5:00</div>
+                        <div className="flex flex-row gap-4 items-center">
+                            {/* Pomodoro/Break button */}
+                            {pomodoroMode === "none" && (
+                                <button
+                                    onClick={handleStartPomodoro}
+                                    onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                    className="px-6 py-3 text-xl font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                    style={{
+                                        backgroundColor: "#D4A574",
+                                        border: "3px solid #8B4513",
+                                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                        imageRendering: "pixelated",
+                                    }}
+                                >
+                                    Start Pomodoro
+                                </button>
+                            )}
+
+                            {/* Exit button during break only (work mode exit is rendered separately) */}
+                            {pomodoroMode === "break" && (
+                                <button
+                                    onClick={handleExitPomodoro}
+                                    onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                    className="px-6 py-3 text-xl font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                    style={{
+                                        backgroundColor: "#D4A574",
+                                        border: "3px solid #8B4513",
+                                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                        imageRendering: "pixelated",
+                                    }}
+                                >
+                                    Exit Break
+                                </button>
+                            )}
+
+                            {/* Small break timer in bottom right */}
+                            {pomodoroMode === "break" && (
+                                <div className="flex flex-col items-center gap-2">
+                                    <div className="text-lg font-bold text-white">Short Break</div>
+                                    <div className="text-4xl font-bold text-white">{formatTime(breakTime)}</div>
+                                    {breakTime === 0 ? (
+                                        <button
+                                            onClick={handleClaimBreakReward}
+                                            onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                            className="px-4 py-2 text-lg font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                            style={{
+                                                backgroundColor: "#4CAF50",
+                                                border: "3px solid #2E7D32",
+                                                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                imageRendering: "pixelated",
+                                            }}
+                                        >
+                                            Continue ({Math.floor(25 * calculateIncomeMultiplier())} coins)
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => setIsBreakRunning(!isBreakRunning)}
+                                            onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                            className="px-4 py-2 text-lg font-bold text-white transition-all active:scale-95"
+                                            style={{
+                                                backgroundColor: "#D4A574",
+                                                border: "3px solid #8B4513",
+                                                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                                imageRendering: "pixelated",
+                                            }}
+                                        >
+                                            {isBreakRunning ? "Pause" : "Start"}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
+
+                {/* Big Pomodoro Timer Overlay */}
+                {pomodoroMode === "work" && (
+                    <>
+                        {/* Translucent gray overlay that blocks interaction */}
+                        <div
+                            className="fixed inset-0"
+                            style={{ 
+                                zIndex: 10003,
+                                backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                                pointerEvents: 'auto',
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                        
+                        {/* Exit button - fixed position above overlay */}
+                        <div
+                            className="fixed bottom-8 right-8"
+                            style={{ zIndex: 10005 }}
+                        >
+                            <button
+                                onClick={handleExitPomodoro}
+                                onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                className="px-6 py-3 text-xl font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                style={{
+                                    backgroundColor: "#D4A574",
+                                    border: "3px solid #8B4513",
+                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
+                                    imageRendering: "pixelated",
+                                }}
+                            >
+                                Exit Pomodoro
+                            </button>
+                        </div>
+                        
+                        {/* Pomodoro timer display */}
+                        <div
+                            className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-6"
+                            style={{ zIndex: 10004 }}
+                        >
+                            <div className="text-6xl font-bold text-white">Pomodoro</div>
+                            <div className="text-9xl font-bold text-white">{formatTime(pomodoroTime)}</div>
+                            
+                            {pomodoroCompleted ? (
+                                <button
+                                    onClick={handleClaimPomodoroReward}
+                                    onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                    className="px-8 py-4 text-3xl font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                    style={{
+                                        backgroundColor: "#4CAF50",
+                                        border: "3px solid #2E7D32",
+                                        boxShadow: "0 4px 8px rgba(0, 0, 0, 0.5)",
+                                        imageRendering: "pixelated",
+                                    }}
+                                >
+                                    Claim {Math.floor(125 * calculateIncomeMultiplier())} coins
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => setIsPomodoroRunning(!isPomodoroRunning)}
+                                    onMouseEnter={() => playSound("/Audio/interact.mp3")}
+                                    className="px-8 py-4 text-3xl font-bold text-white transition-all active:scale-95 wiggle-hover"
+                                    style={{
+                                        backgroundColor: "#D4A574",
+                                        border: "3px solid #8B4513",
+                                        boxShadow: "0 4px 8px rgba(0, 0, 0, 0.5)",
+                                        imageRendering: "pixelated",
+                                    }}
+                                >
+                                    {isPomodoroRunning ? "Pause" : "Start"}
+                                </button>
+                            )}
+                        </div>
+                    </>
+                )}
             </main>
         </>
     );
