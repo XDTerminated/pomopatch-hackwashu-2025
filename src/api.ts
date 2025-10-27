@@ -1,5 +1,5 @@
 // API Service for backend communication
-const API_URL = "http://localhost:8000";
+const API_URL = "https://hackez-hackwashu.hf.space";
 
 export interface UserData {
     email: string;
