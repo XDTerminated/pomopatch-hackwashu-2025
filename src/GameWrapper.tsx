@@ -4,7 +4,7 @@ import App from "./App";
 import { apiService, UserData, Plant } from "./api";
 
 export default function GameWrapper() {
-    const { user } = useUser();
+    const { user, isLoaded } = useUser();
     const { getToken } = useAuth();
     const { signOut } = useClerk();
     const [isLoading, setIsLoading] = useState(true);
@@ -14,6 +14,11 @@ export default function GameWrapper() {
 
     useEffect(() => {
         const initializeUser = async () => {
+            // Wait for Clerk to load the user
+            if (!isLoaded) {
+                return;
+            }
+
             if (!user?.primaryEmailAddress?.emailAddress) {
                 setError("No email found");
                 setIsLoading(false);
@@ -52,7 +57,7 @@ export default function GameWrapper() {
         };
 
         initializeUser();
-    }, [user, getToken]);
+    }, [user, getToken, isLoaded]);
 
     if (isLoading) {
         return (
@@ -96,15 +101,5 @@ export default function GameWrapper() {
 
     // Log backend weather value for debugging and coerce to number when passing to App
     console.log("[GameWrapper] userData.weather:", userData?.weather);
-    return (
-        <App
-            initialMoney={userData?.money}
-            initialPlantLimit={userData?.plant_limit}
-            initialWeather={Number(userData?.weather ?? 0)}
-            initialPlants={plants}
-            userEmail={user?.primaryEmailAddress?.emailAddress || ""}
-            getAuthToken={getToken}
-            onSignOut={handleSignOut}
-        />
-    );
+    return <App initialMoney={userData?.money} initialPlantLimit={userData?.plant_limit} initialWeather={Number(userData?.weather ?? 0)} initialPlants={plants} userEmail={user?.primaryEmailAddress?.emailAddress || ""} getAuthToken={getToken} onSignOut={handleSignOut} />;
 }
