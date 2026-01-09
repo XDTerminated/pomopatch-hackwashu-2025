@@ -1,6 +1,6 @@
 import { useState, useEffect, memo, useRef } from "react";
 import "./globals.css";
-import { apiService, Plant, UserData } from "./api";
+import { apiService, Plant, UserData } from "../services/api";
 
 type SeedType = "Berry" | "Fungi" | "Rose";
 type ToolType = "Spade" | "WateringCan" | "Fertilizer" | "Backpack";

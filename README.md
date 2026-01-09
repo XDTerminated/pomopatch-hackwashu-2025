@@ -1,6 +1,8 @@
 # Pomo Patch
 
-A productivity-focused plant growing game that combines Pomodoro timers with virtual gardening. Built as a monorepo with a React/Tauri frontend and FastAPI backend.
+A productivity-focused plant growing game that combines Pomodoro timers with virtual gardening. Built as a **Turborepo monorepo** with a React/Tauri frontend and FastAPI backend.
+
+**HackWashU 2025 Winner**
 
 ## Overview
 
@@ -10,197 +12,160 @@ Pomo Patch is an interactive game where users can grow virtual plants while mana
 
 - **Virtual Garden**: Plant and grow three types of plants (Berries, Fungi, Roses) with multiple varieties and rarities
 - **Pomodoro Timer**: Complete 25-minute work sessions and earn rewards
-- **Dynamic Weather System**: Experience different weather conditions (Sunny, Rainy, Cloudy) that affect gameplay
+- **Dynamic Weather System**: Experience different weather conditions (Sunny, Rainy, Cloudy)
 - **Plant Growth**: Water seedlings, fertilize plants, and watch them grow through multiple stages
 - **Player Economy**: Earn coins, buy seeds and tools, expand your plant inventory
-- **Social Features**:
-  - Leaderboard to compare progress with other players
-  - Visit other players' gardens and view their plants
-  - Search for players by username and tag
-- **Audio System**: Interactive sound effects with mute controls
-- **Real-time Synchronization**: Backend integration for persistent game state
+- **Social Features**: Leaderboard, visit other gardens, search for players
+- **Desktop App**: Native desktop application via Tauri
 
 ## Tech Stack
 
-### Frontend (`src/`)
-- **React 19** - UI framework
-- **TypeScript** - Type-safe development
-- **Vite** - Build tool and dev server
-- **Tailwind CSS 4** - Utility-first styling
-- **Clerk** - Authentication and user management
-
-### Desktop App (`src-tauri/`)
-- **Tauri 2** - Desktop application framework
-- **Rust** - Native desktop integration
-
-### Backend (`src-python/`)
-- **FastAPI** - Modern async web framework
-- **PostgreSQL** - Database via asyncpg
-- **Clerk** - JWT-based authentication
-- **Uvicorn** - ASGI server
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | React 19, TypeScript, Vite, Tailwind CSS 4 |
+| **Desktop** | Tauri 2, Rust |
+| **Backend** | FastAPI, Python 3.13, asyncpg |
+| **Auth** | Clerk |
+| **Database** | PostgreSQL |
+| **Monorepo** | Turborepo, pnpm |
 
 ## Project Structure
 
 ```
-hackwashu2025/
-├── src/                  # React frontend (TypeScript)
-│   ├── App.tsx           # Main game component
-│   ├── AppWrapper.tsx    # Clerk authentication wrapper
-│   ├── GameWrapper.tsx   # Game state management
-│   ├── api.ts            # Backend API service
-│   └── ...
-├── src-python/           # FastAPI backend (Python)
-│   ├── main.py           # API endpoints
-│   └── .python-version   # Python version (3.13)
-├── src-tauri/            # Tauri desktop app (Rust)
-│   ├── src/
-│   ├── Cargo.toml
-│   └── tauri.conf.json
-├── public/               # Static assets
-│   ├── Audio/            # Sound effects
-│   └── Sprites/          # Game sprites
-├── pyproject.toml        # Python dependencies
-├── package.json          # Node.js dependencies
-└── vite.config.ts        # Vite configuration
+pomo-patch/
+├── apps/
+│   ├── web/                    # React frontend
+│   │   ├── src/
+│   │   │   ├── app/            # App components
+│   │   │   ├── features/       # Feature modules
+│   │   │   └── services/       # API client
+│   │   ├── public/             # Static assets
+│   │   └── package.json
+│   │
+│   └── api/                    # FastAPI backend
+│       ├── app/
+│       │   ├── routers/        # API endpoints
+│       │   ├── core/           # Config & security
+│       │   ├── models/         # Pydantic schemas
+│       │   └── db/             # Database
+│       ├── Dockerfile
+│       └── requirements.txt
+│
+├── src-tauri/                  # Tauri desktop app
+├── turbo.json                  # Turborepo config
+├── pnpm-workspace.yaml
+└── package.json
 ```
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js (v18 or higher)
-- pnpm package manager
+- Node.js 18+
+- pnpm
 - Python 3.13+
-- Rust and Cargo (for Tauri)
-- PostgreSQL database
+- Rust (for Tauri)
+- PostgreSQL
 
-### Frontend Installation
+### Installation
 
-1. Install dependencies:
 ```bash
+# Install dependencies
 pnpm install
-```
 
-2. Set up environment variables (create `.env`):
-```
-VITE_CLERK_PUBLISHABLE_KEY=your_clerk_key_here
-```
-
-3. Start the development server:
-```bash
+# Start both frontend and backend
 pnpm dev
+
+# Or start individually
+pnpm dev:web    # Frontend at http://localhost:1420
+pnpm dev:api    # Backend at http://localhost:8000
 ```
 
-### Backend Installation
+### Environment Variables
 
-1. Install Python dependencies:
-```bash
-cd src-python
-pip install -e ../  # or use uv: uv sync
+**Frontend** (`apps/web/.env`):
+```
+VITE_CLERK_PUBLISHABLE_KEY=your_key
+VITE_API_URL=http://localhost:8000
 ```
 
-2. Set up environment variables (create `.env` in root):
+**Backend** (`apps/api/.env`):
 ```
-DATABASE_URL=postgresql://user:password@localhost:5432/dbname
-CLERK_SECRET_KEY=your_clerk_secret_key
-CLERK_JWKS_URL=https://your-clerk-instance.clerk.accounts.dev/.well-known/jwks.json
-```
-
-3. Start the backend server:
-```bash
-cd src-python
-uvicorn main:app --reload
+DATABASE_URL=postgresql://user:pass@localhost:5432/pomopatch
+CLERK_SECRET_KEY=your_secret
+CLERK_JWKS_URL=https://your-clerk.clerk.accounts.dev/.well-known/jwks.json
 ```
 
 ### Desktop App
 
-Build the Tauri desktop application:
 ```bash
-pnpm tauri build
+pnpm tauri dev    # Development
+pnpm tauri build  # Production build
 ```
+
+## Deployment
+
+### Frontend → Vercel
+- Root Directory: `apps/web`
+- Framework: Vite
+- Auto-deploys on push
+
+### Backend → Railway
+- Root Directory: `apps/api`
+- Uses Dockerfile
+- Auto-deploys on push
+
+## API Endpoints
+
+### Users
+- `POST /users/` - Create user
+- `GET /users` - Leaderboard
+- `GET /users/{email}` - Get user
+- `PATCH /users/{email}/money` - Update balance
+- `POST /users/{email}/increase-plant-limit` - Upgrade capacity
+
+### Plants
+- `POST /users/{email}/plants/` - Plant a seed
+- `GET /users/{email}/plants` - Get plants
+- `PATCH /users/{email}/plants/{id}/apply-water` - Water plant
+- `PATCH /users/{email}/plants/{id}/apply-fertilizer` - Fertilize
+- `DELETE /users/{email}/plants/{id}/sell` - Sell plant
 
 ## Game Mechanics
 
 ### Plants
-
-- **3 Plant Families**: Berry, Fungi (Mushrooms), Rose
-- **3 Rarity Tiers**: Common (79%), Rare (20%), Legendary (1%)
-- **3 Growth Stages**: Seed → Sprout → Fully Grown
-
-**Plant Species by Rarity:**
-- **Fungi**: brown_mushroom (common), red_mushroom (rare), mario_mushroom (legendary)
-- **Rose**: red_rose (common), pink_rose/white_rose (rare), withered_rose (legendary)
-- **Berry**: blueberry (common), strawberry (rare), ancient_fruit (legendary)
+- **3 Families**: Berry, Fungi, Rose
+- **3 Rarities**: Common (79%), Rare (20%), Legendary (1%)
+- **3 Stages**: Seed → Sprout → Fully Grown
 
 ### Economy
-
-| Item | Cost |
-|------|------|
-| Seed Packet | 100 coins |
+| Action | Cost/Reward |
+|--------|-------------|
+| Seed | 100 coins |
 | Water | 25 coins |
 | Fertilizer | 25 coins |
-| Plant Limit Upgrade | 1000 coins (1.1x increase per upgrade) |
+| Work Session (25 min) | +125 coins |
+| Short Break | +25 coins |
+| Long Break | +75 coins |
 
-**Sell Values:**
-
+### Sell Values
 | Rarity | Stage 1 | Stage 2 |
 |--------|---------|---------|
 | Common | 50 | 100 |
 | Rare | 100 | 200 |
 | Legendary | 250 | 500 |
 
-### Pomodoro System
-
-- **Work Session**: 25 minutes, earn 125 coins
-- **Short Break**: 5 minutes, earn 25 coins
-- **Long Break**: 15 minutes after every 4th Pomodoro, earn 75 coins
-
-## API Endpoints
-
-### User Endpoints
-
-- `POST /users/` - Create new user
-- `GET /users` - Get all users (leaderboard)
-- `GET /users/{email}` - Get user by email
-- `GET /users/by-username/{username}/{tag}` - Get user by username and tag
-- `PATCH /users/{email}/username` - Update username
-- `PATCH /users/{email}/money` - Change user money
-- `POST /users/{email}/increase-plant-limit` - Upgrade plant capacity
-- `POST /users/{email}/cycle-weather` - Change garden weather
-
-### Plant Endpoints
-
-- `POST /users/{email}/plants/` - Purchase and plant a new plant
-- `GET /users/{email}/plants` - Get all user plants
-- `PATCH /users/{email}/plants/{plant_id}/position` - Move plant position
-- `PATCH /users/{email}/plants/{plant_id}/apply-water` - Water a plant
-- `PATCH /users/{email}/plants/{plant_id}/apply-fertilizer` - Fertilize a plant
-- `PATCH /users/{email}/plants/{plant_id}/grow` - Update plant growth
-- `DELETE /users/{email}/plants/{plant_id}/sell` - Sell a plant
-
-## Database Schema
-
-**User Table:**
-- `email` (primary key)
-- `username` (unique)
-- `money` (float)
-- `plant_limit` (integer)
-- `weather` (integer)
-
-**Plant Table:**
-- `plant_id` (primary key, auto-increment)
-- `plant_type`, `plant_species`, `size`, `rarity`
-- `x`, `y` (position)
-- `stage`, `growth_time_remaining`, `fertilizer_remaining`
-- `email` (foreign key to user)
-
 ## Scripts
 
-- `pnpm dev` - Start frontend development server
-- `pnpm build` - Build frontend for production
-- `pnpm tauri dev` - Start Tauri development mode
-- `pnpm tauri build` - Build desktop application
+```bash
+pnpm dev          # Start all apps
+pnpm dev:web      # Frontend only
+pnpm dev:api      # Backend only
+pnpm build        # Build all
+pnpm tauri dev    # Desktop app dev
+pnpm tauri build  # Desktop app build
+```
 
 ## License
 
-This project was created for HackWashU 2025.
+Created for HackWashU 2025.

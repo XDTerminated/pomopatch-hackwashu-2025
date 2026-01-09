@@ -1,36 +1,41 @@
+# Turborepo
+.turbo/
+node_modules/
+
+# Frontend
+apps/web/dist/
+apps/web/node_modules/
+
+# Backend
+apps/api/.venv/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Tauri
+src-tauri/target/
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
 
-# Node.js
-node_modules
-dist
-dist-ssr
-*.local
+# Environment
+.env
+.env.local
+.env*.local
 
-# Python
-.venv
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-uv.lock
-
-# Editor directories and files
+# IDE
+.idea/
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-
-# Environment
-.env
+.DS_Store

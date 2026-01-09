@@ -1,7 +1,7 @@
 import { ClerkProvider, SignedIn, SignedOut } from "@clerk/clerk-react";
-import LandingPage from "./LandingPage";
+import LandingPage from "../features/auth/LandingPage";
 import GameWrapper from "./GameWrapper";
-import SSOCallback from "./SSOCallback";
+import SSOCallback from "../features/auth/SSOCallback";
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_PUBLIC_CLERK_PUBLISHABLE_KEY;
 

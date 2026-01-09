@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useUser, useAuth, useClerk } from "@clerk/clerk-react";
 import App from "./App";
-import { apiService, UserData, Plant } from "./api";
+import { apiService, UserData, Plant } from "../services/api";
 
 export default function GameWrapper() {
     const { user, isLoaded } = useUser();

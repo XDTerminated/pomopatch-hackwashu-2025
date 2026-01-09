@@ -1,18 +1,18 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "hackwashu2026",
+  "productName": "Pomo Patch",
   "version": "0.1.0",
-  "identifier": "com.sgupt.hackwashu2026",
+  "identifier": "com.sgupt.pomopatch",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm --filter web dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
-    "frontendDist": "../dist"
+    "beforeBuildCommand": "pnpm --filter web build",
+    "frontendDist": "../apps/web/dist"
   },
   "app": {
     "windows": [
       {
-        "title": "hackwashu2026",
+        "title": "Pomo Patch",
         "width": 800,
         "height": 600
       }
