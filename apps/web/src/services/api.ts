@@ -1,5 +1,5 @@
 // API Service for backend communication
-const API_URL = "https://hackez-hackwashu.hf.space";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export interface UserData {
     email: string;
