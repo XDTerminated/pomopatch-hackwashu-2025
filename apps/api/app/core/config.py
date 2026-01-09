@@ -48,10 +48,5 @@ STAGE_1_GROWTH_TIMES = {0: 60, 1: 120, 2: 360}
 STAGE_1_SELL_VALUES = {0: 50, 1: 100, 2: 250}
 STAGE_2_SELL_VALUES = {0: 100, 1: 200, 2: 500}
 
-# CORS origins
-CORS_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:1420",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:1420",
-]
+# CORS origins - use "*" to allow all origins, or list specific ones
+CORS_ORIGINS = ["*"]
